@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", "Noto Sans Mono CJK SC", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #09090b;
+  /* 桌面应用感：禁止整页滚动/选中 */
+  overflow: hidden;
+  user-select: none;
+}
+
+/* 细滚动条，别抢视觉 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #ffffff14;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ffffff26;
+}
+
+/* cmdk 输入框去掉浏览器默认样式 */
+[cmdk-input] {
+  border: 0;
+  outline: none;
+  background: transparent;
+}
