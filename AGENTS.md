@@ -2,25 +2,8 @@
 
 给后续 OpenCode 会话的速查表。只记录从 config 和代码里推不出、或容易推错的事。
 
-## 能力边界（最大的坑）
-
-Rust 工具链和 `libwebkit2gtk-4.1-dev` **都还没装**：
-
-| 命令 | 状态 |
-|---|---|
-| `pnpm dev` | 可用 → http://localhost:1420 |
-| `pnpm build` | 可用，**且是唯一的校验手段** |
-| `pnpm tauri dev` / `pnpm tauri build` | 必然失败，不要尝试 |
-
-`src-tauri/` 目前是 create-tauri-app 的原始模板，`lib.rs` 只有一句 `run()`，没有任何自有模块。
-
-Node 与 pnpm 装在 `~/.nvm`，非交互 shell 不会读 `.bashrc`，直接跑 `pnpm` 会 command not found。先执行：
-
-```bash
-export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"
-```
-
-只用 pnpm —— `package.json` 的 `packageManager` 锁到 12.6.0。
+本机环境状态、易过期的待办、设计文档位置等不稳定的上下文放在 `LOCAL.md`
+（已 gitignore）。**先读本文件，再读 `LOCAL.md`。**
 
 ## 架构：两个咽喉点
 
@@ -35,21 +18,13 @@ export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"
 - 过滤逻辑归后端（阶段 4 = SQLite FTS5），前端不做本地过滤
 - 新增接口方法要**同时**改 `api.ts` 和 `mock.ts`，否则 UI 静默失效
 
-## docs/ 被 git 忽略，但它是架构事实来源
-
-`.gitignore:11` 忽略 `docs/*`。六份设计文档只存在于本地工作副本，`git status` 和 clone 都看不到。
-
-改架构前先读对应文档。实现与文档冲突时两边都要更新 —— 但永远不要 `git add docs/`，确需入库时用 `git add -f docs/`。
-
-内容：环境搭建 / 架构设计 / 数据库设计 / 内容识别与工具箱 / 平台差异与风险 / 路线图与任务清单。
-
 ## 校验
 
 没有 eslint、prettier，也没有测试框架。`pnpm build` = `tsc && vite build`，**tsc 就是类型检查**。
 
 `tsconfig.json` 开了 `noUnusedLocals` 和 `noUnusedParameters` —— 多一个没用到的 import 就构建失败。
 
-Rust 侧（装好之后）：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
+Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 
 ## 改包名要同步四处
 
@@ -65,7 +40,7 @@ Rust 侧（装好之后）：`cd src-tauri && cargo check` 比重开 `pnpm tauri
 - **端口 1420 且 `strictPort: true`** —— 被占用会直接失败。不要改端口，`tauri.conf.json` 的 `devUrl` 依赖这个值
 - **Tailwind v4 没有 `tailwind.config.js`** —— 主题配在 `src/index.css` 的 `@theme` 里
 - **`src/lib/mock.ts` 是内存态** —— 刷新即重置。新功能要造数据就往这里加
-- **`clsx` / `tailwind-merge` 已安装但全项目零引用** —— shadcn/ui 预留，可卸
+- **`docs/` 不在版本库中** —— 设计文档是 gitignored 的本地文件，不要假设 clone 后能看到
 - 无 CI、无 pre-commit hook
 
 ## 提交信息
@@ -79,6 +54,4 @@ Rust 侧（装好之后）：`cd src-tauri && cargo check` 比重开 `pnpm tauri
 
 类型前缀：`feat` `fix` `chore` `refactor` `docs` `perf`
 
-## 推送
-
-远程已配 `git@github.com:Ytadpole/devClip.git`，但**从未推送**。推不推由用户决定，不要自行 `git push`。
+推送前先问用户，不要自行 `git push`。

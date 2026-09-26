@@ -10,6 +10,9 @@ lerna-debug.log*
 # 设计文档暂不入版本库
 docs/*
 
+# 本机环境状态与待办，因含易过期内容不入库
+LOCAL.md
+
 node_modules
 dist
 dist-ssr
