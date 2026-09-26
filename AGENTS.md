@@ -2,8 +2,8 @@
 
 给后续 OpenCode 会话的速查表。只记录从 config 和代码里推不出、或容易推错的事。
 
-本机环境状态、易过期的待办、设计文档位置等不稳定的上下文放在 `LOCAL.md`
-（已 gitignore）。**先读本文件，再读 `LOCAL.md`。**
+本机环境事实（Node/pnpm 位置、sudo 限制、网络可达性）在全局
+`~/.config/opencode/AGENTS.md`，不在本文件重复。
 
 ## 架构：两个咽喉点
 
