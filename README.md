@@ -25,35 +25,54 @@
    Tags        Base64     Summarize
 ```
 
-## 文档
+## 当前进度
 
-| 文档 | 内容 |
-|---|---|
-| [01 环境搭建](docs/01-环境搭建.md) | Linux Mint / macOS / Windows 的开发环境安装步骤与验证方法 |
-| [02 架构设计](docs/02-架构设计.md) | 分层边界、端口-适配器、Rust 模块划分、事件流 |
-| [03 数据库设计](docs/03-数据库设计.md) | SQLite schema、FTS5 全文搜索、去重与图片存储策略 |
-| [04 内容识别与工具箱](docs/04-内容识别与工具箱.md) | 类型识别规则表 + 每种类型的操作矩阵 |
-| [05 平台差异与风险](docs/05-平台差异与风险.md) | 三平台剪贴板/粘贴/快捷键/权限差异与降级策略 |
-| [06 路线图与任务清单](docs/06-路线图与任务清单.md) | 阶段划分、完成标准、Rust 学习阶梯 |
+**阶段 0–1。** Tauri 2 脚手架 + React 调色板界面，数据来自内存 mock，尚未接 Rust。
 
----
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 0 | 环境 + 脚手架 | ✅ |
+| 1 | UI + mock 数据 | ✅ 界面待人工验收 |
+| 2 | 端口-适配器接线（换 tauri 后端） | ⬜ |
+| 3 | `detect.rs` 内容识别器（纯 Rust） | ⬜ |
+| 4 | SQLite + FTS5 历史记录 | ⬜ |
+| 5 | 监听 + 快捷键 + 粘贴 | ⬜ |
+
+## 开发
+
+```bash
+pnpm install
+pnpm dev       # http://localhost:1420
+pnpm build     # tsc 类型检查 + vite 打包（唯一的校验命令）
+```
+
+`pnpm tauri dev` 需要 Rust 与 webkit2gtk，尚未安装。
 
 ## 技术栈
 
-| 模块 | 选择 | 原因 |
-|---|---|---|
-| UI | React + TypeScript | 复杂交互、生态成熟 |
-| 构建 | Vite | 快 |
-| 桌面框架 | Tauri 2 | 跨平台、体积与内存占用低 |
-| 系统层 | Rust | 剪贴板、快捷键、模拟按键、文件 |
-| 数据 | SQLite（rusqlite） | 本地工具标配 |
-| 搜索 | SQLite FTS5 + trigram 分词器 | 子串级全文搜索，适合代码 |
-| 状态 | Zustand | 简单够用 |
-| 样式 | Tailwind CSS v4 + shadcn/ui + cmdk | 快速开发，调色板交互现成 |
-| 包管理 | pnpm | Tauri 前后端双包，节省磁盘 |
-| AI | OpenAI 兼容 API | P2 再接入 |
-| CI | GitHub Actions + tauri-action | 三平台自动构建 |
-| 发布 | GitHub Releases | 开源分发 |
+| 模块 | 选择 |
+|---|---|
+| UI | React 19 + TypeScript 6 |
+| 构建 | Vite 8 |
+| 桌面框架 | Tauri 2 |
+| 系统层 | Rust（阶段 3 起） |
+| 数据 | SQLite + FTS5 trigram（阶段 4） |
+| 状态 | Zustand |
+| 样式 | Tailwind CSS v4 + cmdk |
+| 包管理 | pnpm |
+
+## 文档
+
+设计文档位于 [`docs/`](docs/)，**因用户要求暂不入版本库**，仅存在于本地工作副本。
+
+| 文档 | 内容 |
+|---|---|
+| [01 环境搭建](docs/01-环境搭建.md) | 三平台开发环境安装与验证 |
+| [02 架构设计](docs/02-架构设计.md) | 分层边界、端口-适配器、事件流 |
+| [03 数据库设计](docs/03-数据库设计.md) | SQLite schema、FTS5、去重、图片与敏感信息 |
+| [04 内容识别与工具箱](docs/04-内容识别与工具箱.md) | 13 条识别规则 + 操作矩阵 |
+| [05 平台差异与风险](docs/05-平台差异与风险.md) | 剪贴板/粘贴/快捷键三平台差异与降级策略 |
+| [06 路线图与任务清单](docs/06-路线图与任务清单.md) | 阶段划分、完成标准、风险台账 |
 
 ## 平台路线
 
@@ -63,7 +82,8 @@ V0.2  macOS + Linux
 V0.3  macOS + Linux + Windows
 ```
 
-## 当前状态
+## 平台
 
-**文档阶段。** 尚未初始化工程，环境未安装（Node / Rust / webkit2gtk 均缺失）。
-下一步见 [01 环境搭建](docs/01-环境搭建.md)。
+```
+macOS · Windows · Linux(X11)
+```
