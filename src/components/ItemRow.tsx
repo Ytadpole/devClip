@@ -8,20 +8,37 @@ interface Props {
   active: boolean;
   onSelect: (id: number) => void;
   onToggleFavorite: (id: number) => void;
+  onContextMenu: (item: ClipboardItem, x: number, y: number) => void;
 }
 
-export function ItemRow({ item, active, onSelect, onToggleFavorite }: Props) {
+export function ItemRow({ item, active, onSelect, onToggleFavorite, onContextMenu }: Props) {
+  // 图片用缩略图代替类型徽标，宽度和徽标接近，左边缘不会跳
+  const thumb = item.contentType === "image" ? item.imagePath : undefined;
+
   return (
     <Command.Item
       value={String(item.id)}
       onSelect={() => onSelect(item.id)}
-      className={`group relative flex cursor-pointer items-start gap-3 border-l-2 px-3 py-2.5 transition-colors ${
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(item, e.clientX, e.clientY);
+      }}
+      // h-[62px] 与 VirtualList 的 ROW_H 是同一个数，改一处要改两处
+      className={`group relative flex h-[62px] cursor-pointer items-start gap-3 border-l-2 px-3 py-2.5 transition-colors ${
         active
           ? "border-sky-400 bg-white/[0.07]"
           : "border-transparent hover:bg-white/[0.035]"
       }`}
     >
-      <TypeBadge type={item.contentType} className="mt-0.5" />
+      {thumb ? (
+        <img
+          src={thumb}
+          alt=""
+          className="mt-px h-9 w-9 shrink-0 rounded border border-white/10 object-cover"
+        />
+      ) : (
+        <TypeBadge type={item.contentType} className="mt-0.5" />
+      )}
 
       <div className="min-w-0 flex-1">
         <div
@@ -32,7 +49,7 @@ export function ItemRow({ item, active, onSelect, onToggleFavorite }: Props) {
           {oneLine(item.content, 200)}
         </div>
 
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
+        <div className="mt-1 flex items-center gap-2 text-[11px] leading-4 text-zinc-500">
           <span>{relTime(item.lastCopiedAt)}</span>
           {item.sourceApp && (
             <>

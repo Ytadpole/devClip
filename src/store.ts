@@ -10,27 +10,26 @@ import { create } from "zustand";
 import { api, backendName } from "./lib/backend";
 import type { ClipboardItem, ContentType, ToolboxAction } from "./lib/api";
 
-export const ALL_TYPES: ContentType[] = [
-  "json",
-  "sql",
-  "code",
-  "url",
-  "jwt",
-  "text",
-  "uuid",
-  "base64",
-  "ip",
-  "commit",
-  "markdown",
-  "exception",
-  "image",
-];
+/** 搜索防抖。docs/06 定的是 80ms：再小则每个击键都打一次后端，
+ * 再大则能感觉到「搜索不跟手」。 */
+const SEARCH_DEBOUNCE = 80;
+
+/** 一次取多少条。虚拟列表吃得下更多，但再多就该由后端分页
+ *  （阶段 4 的 offset），这里只是给 mock 和早期一个上限。 */
+const PAGE_LIMIT = 200;
 
 const clamp = (n: number, len: number) => (len === 0 ? 0 : Math.max(0, Math.min(n, len - 1)));
 
 interface Status {
   text: string;
   kind: "ok" | "err";
+}
+
+/** 右键菜单的挂载点。用视口坐标，菜单本体 fixed 定位。 */
+export interface MenuTarget {
+  item: ClipboardItem;
+  x: number;
+  y: number;
 }
 
 interface State {
@@ -42,15 +41,21 @@ interface State {
   favoriteOnly: boolean;
   selected: number;
   status: Status | null;
+  menu: MenuTarget | null;
 
   init: () => Promise<void>;
+  /** 变更之后重新拉取（收藏、粘贴、删除），尽量保住选中项 */
   refresh: () => Promise<void>;
+  /** 筛选条件变了重新拉取，选中项回到第一条 */
+  refilter: () => Promise<void>;
   setQuery: (q: string) => void;
   toggleType: (t: ContentType) => void;
   toggleFavoriteOnly: () => void;
+  clearFilters: () => void;
   select: (i: number) => void;
   move: (d: number) => void;
-  loadActions: (i: ClipboardItem) => Promise<void>;
+  jump: (i: number) => void;
+  loadActions: (t: ContentType) => Promise<void>;
 
   toggleFavorite: (id: number) => Promise<void>;
   copy: (id: number) => Promise<void>;
@@ -58,10 +63,26 @@ interface State {
   remove: (id: number) => Promise<void>;
   runAction: (item: ClipboardItem, actionId: string) => Promise<void>;
   say: (text: string, kind?: Status["kind"]) => void;
-  clearStatus: () => void;
+
+  openMenu: (item: ClipboardItem, x: number, y: number) => void;
+  closeMenu: () => void;
 }
 
 let statusTimer: ReturnType<typeof setTimeout> | undefined;
+let queryTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** 请求序号。mock 的延迟是固定的，看不出乱序；接上 SQLite 之后
+ *  同一串查询的耗时会抖动，慢的旧响应可能后到并覆盖新结果。
+ *  只有序号等于最新一次的请求才允许写回 state。 */
+let reqSeq = 0;
+
+/** 唯一的查询入口。返回 null 表示响应已过期，调用方应当丢弃。 */
+async function fetchItems(): Promise<ClipboardItem[] | null> {
+  const { query, types, favoriteOnly } = useStore.getState();
+  const seq = ++reqSeq;
+  const items = await api.list({ text: query, types, favoriteOnly, limit: PAGE_LIMIT });
+  return seq === reqSeq ? items : null;
+}
 
 export const useStore = create<State>((set, get) => ({
   items: [],
@@ -72,36 +93,59 @@ export const useStore = create<State>((set, get) => ({
   favoriteOnly: false,
   selected: 0,
   status: null,
+  menu: null,
 
   async init() {
     set({ loading: true });
-    await get().refresh();
-    set({ loading: false });
+    try {
+      await get().refresh();
+    } finally {
+      set({ loading: false });
+    }
   },
 
   async refresh() {
-    const { query, types, favoriteOnly } = get();
-    const items = await api.list({ text: query, types, favoriteOnly, limit: 200 });
-    set({ items, selected: clamp(get().selected, items.length) });
+    // 立即拉取意味着放弃还没触发的防抖，否则它会再打一次同样的查询
+    clearTimeout(queryTimer);
+    // 选中项必须在发请求前记下来：一是收藏会改变后端排序，
+    // 二是等响应期间光标可能已经移走，那时再读就串行了
+    const cur = get().selected;
+    const id = get().items[cur]?.id;
+    const items = await fetchItems();
+    if (!items) return;
+    // 按 id 找回同一项，免得光标底下的行突然换成另一条
+    const at = id === undefined ? -1 : items.findIndex((x) => x.id === id);
+    set({ items, selected: at >= 0 ? at : clamp(cur, items.length) });
+  },
+
+  async refilter() {
+    clearTimeout(queryTimer);
+    set({ selected: 0 });
+    const items = await fetchItems();
+    if (!items) return;
+    set({ items, selected: 0 });
   },
 
   setQuery(query) {
     set({ query, selected: 0 });
-    void get().refresh();
+    clearTimeout(queryTimer);
+    queryTimer = setTimeout(() => void get().refilter(), SEARCH_DEBOUNCE);
   },
 
   toggleType(t) {
     const cur = get().types;
-    set({
-      types: cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t],
-      selected: 0,
-    });
-    void get().refresh();
+    set({ types: cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t] });
+    void get().refilter();
   },
 
   toggleFavoriteOnly() {
-    set({ favoriteOnly: !get().favoriteOnly, selected: 0 });
-    void get().refresh();
+    set({ favoriteOnly: !get().favoriteOnly });
+    void get().refilter();
+  },
+
+  clearFilters() {
+    set({ types: [], favoriteOnly: false });
+    void get().refilter();
   },
 
   select(i) {
@@ -109,16 +153,26 @@ export const useStore = create<State>((set, get) => ({
   },
 
   move(d) {
-    set({ selected: clamp(get().selected + d, get().items.length) });
+    const n = get().items.length;
+    if (n === 0) return;
+    // 首尾相接，对应原来 cmdk 的 loop
+    set({ selected: (((get().selected + d) % n) + n) % n });
   },
 
-  async loadActions(i) {
-    set({ actions: await api.availableActions(i.contentType) });
+  jump(i) {
+    set({ selected: clamp(i, get().items.length) });
+  },
+
+  async loadActions(t) {
+    const actions = await api.availableActions(t);
+    // 快速移动选中项时，旧的慢响应会盖掉新的
+    if (useStore.getState().items[useStore.getState().selected]?.contentType !== t) return;
+    set({ actions });
   },
 
   async toggleFavorite(id) {
     const now = await api.toggleFavorite(id);
-    set({ items: get().items.map((x) => (x.id === id ? { ...x, favorite: now } : x)) });
+    await get().refresh();
     get().say(now ? "已收藏" : "已取消收藏");
   },
 
@@ -129,25 +183,13 @@ export const useStore = create<State>((set, get) => ({
 
   async paste(id) {
     await api.paste(id);
-    const items = await api.list({
-      text: get().query,
-      types: get().types,
-      favoriteOnly: get().favoriteOnly,
-      limit: 200,
-    });
-    set({ items, selected: clamp(get().selected, items.length) });
+    await get().refresh();
     get().say("已粘贴");
   },
 
   async remove(id) {
     await api.remove([id]);
-    const items = await api.list({
-      text: get().query,
-      types: get().types,
-      favoriteOnly: get().favoriteOnly,
-      limit: 200,
-    });
-    set({ items, selected: clamp(get().selected, items.length) });
+    await get().refresh();
     get().say("已删除");
   },
 
@@ -162,9 +204,12 @@ export const useStore = create<State>((set, get) => ({
     statusTimer = setTimeout(() => set({ status: null }), 2600);
   },
 
-  clearStatus() {
-    clearTimeout(statusTimer);
-    set({ status: null });
+  openMenu(item, x, y) {
+    set({ menu: { item, x, y } });
+  },
+
+  closeMenu() {
+    set({ menu: null });
   },
 }));
 

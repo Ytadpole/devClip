@@ -46,7 +46,21 @@ function item(
   };
 }
 
-const db: ClipboardItem[] = [
+/**
+ * 图片占位。阶段 1 没有真实图片文件，内联一张 SVG 就够 ——
+ * 这样 image 类型的行能真的渲染出缩略图。
+ */
+function shot(w: number, h: number, bg: string, label: string): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<rect width="100%" height="100%" fill="${bg}"/>` +
+    `<text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="monospace" ` +
+    `font-size="${Math.round(h / 4)}" fill="#ffffff" opacity=".9">${label}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const SEED: ClipboardItem[] = [
   item(1, '{"name":"andy","age":18,"tags":["dev","rust"],"active":true}', "json", 2 * MIN, {
     favorite: true,
     copyCount: 3,
@@ -111,7 +125,87 @@ const db: ClipboardItem[] = [
   item(24, "DELETE FROM sessions WHERE expired_at < NOW()", "sql", 3 * DAY, {
     sourceApp: "DataGrip",
   }),
+  // 图片：docs/06 要求 mock 里也得有若干张
+  item(25, "[图片] 500-internal-error.png", "image", 30 * MIN, {
+    imagePath: shot(320, 180, "#b91c1c", "500"),
+    byteSize: 184_320,
+    copyCount: 2,
+    sourceApp: "Firefox",
+  }),
+  item(26, "[图片] docker-ps.png", "image", 2.4 * HOUR, {
+    imagePath: shot(480, 270, "#1d4ed8", "ps"),
+    byteSize: 92_160,
+    sourceApp: "Windows Terminal",
+  }),
+  item(27, "[图片] 架构图 v3.png", "image", 9 * HOUR, {
+    imagePath: shot(400, 400, "#047857", "v3"),
+    byteSize: 340_992,
+    favorite: true,
+    sourceApp: "Obsidian",
+  }),
+  item(28, "[图片] screenshot-2026-09-26.png", "image", 1.4 * DAY, {
+    imagePath: shot(360, 640, "#7c3aed", "9/26"),
+    byteSize: 512_000,
+    sourceApp: "Flameshot",
+  }),
 ];
+
+/**
+ * 批量数据。
+ *
+ * docs/06 要求「超过 50 条必须虚拟化」，但 28 条手写数据在 420px
+ * 视口里只占 7 行，压根触发不了窗口滚动，验收时看不出虚拟化到
+ * 底有没有生效。这里补到 148 条，模板覆盖全部 13 种类型，
+ * 按类型筛选也拉不满。
+ */
+const FILLER_TEMPLATES: Array<[ContentType, string]> = [
+  ["json", '{"service":"api-{n}","replicas":3,"region":"cn-north-1"}'],
+  ["sql", "select id, email from orders_{n} where status = $1 limit 50"],
+  ["code", "kubectl rollout restart deployment/api-{n} -n production"],
+  ["url", "https://internal.example.com/dashboards/{n}?range=24h"],
+  ["uuid", "b7d2f4a1-9c3e-4f80-8a1d-{n}e6c93b52"],
+  ["jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLW4yJ9.sig-{n}"],
+  ["ip", "172.16.{o}.24"],
+  ["base64", "RGV2Q2xpcCBib2NrdW1lbnQge24ge249Cg=="],
+  ["markdown", "## PR #{n}\n\n- [x] 补测试\n- [ ] 合入 release"],
+  ["commit", "{n}f31c9d2b7e4567819ac0de1234567890abcd"],
+  [
+    "exception",
+    "java.lang.IllegalStateException: bean not ready (attempt {n})\n\tat com.example.Boot.run(Boot.java:88)",
+  ],
+  ["text", "会议室 B-{n} 改到周四 10:00"],
+  ["image", "[图片] shot-{n}.png"],
+];
+
+const FILLER_APPS = [
+  "VS Code",
+  "Firefox",
+  "DataGrip",
+  "Windows Terminal",
+  "IntelliJ IDEA",
+  "Postman",
+  "Obsidian",
+];
+
+const FILLER_TINTS = ["#0f766e", "#4338ca", "#a16207", "#be123c", "#15803d"];
+
+const FILLERS: ClipboardItem[] = Array.from({ length: 120 }, (_, k) => {
+  const [t, tpl] = FILLER_TEMPLATES[k % FILLER_TEMPLATES.length];
+  const n = String(1000 + k);
+  // {o} 专供 IP 的第三段，保证还是合法的 0-255
+  const content = tpl.replace(/\{n\}/g, n).replace(/\{o\}/g, String((k % 250) + 2));
+  const opts: Partial<ClipboardItem> = {
+    copyCount: (k % 4) + 1,
+    sourceApp: FILLER_APPS[k % FILLER_APPS.length],
+  };
+  if (t === "image") {
+    opts.imagePath = shot(220, 150, FILLER_TINTS[k % FILLER_TINTS.length], n);
+    opts.byteSize = 40_000 + (k % 9) * 30_000;
+  }
+  return item(100 + k, content, t, (k + 1) * 7 * MIN, opts);
+});
+
+const db: ClipboardItem[] = [...SEED, ...FILLERS];
 
 /** 工具箱动作表 —— 对应 docs/04-内容识别与工具箱.md，阶段 6 移到 Rust 侧 */
 const ACTIONS: Record<ContentType, ToolboxAction[]> = {
@@ -216,14 +310,19 @@ export const mockApi: ClipboardApi = {
 
   async copyToClipboard(id) {
     const it = db.find((i) => i.id === id);
-    if (it) await navigator.clipboard?.writeText(it.content).catch(() => {});
+    // 图片没有真实文件，往剪贴板里写文件名只会误导
+    if (it && it.contentType !== "image") {
+      await navigator.clipboard?.writeText(it.content).catch(() => {});
+    }
     return delay(undefined);
   },
 
   async paste(id) {
     const it = db.find((i) => i.id === id);
     if (it) {
-      await navigator.clipboard?.writeText(it.content).catch(() => {});
+      if (it.contentType !== "image") {
+        await navigator.clipboard?.writeText(it.content).catch(() => {});
+      }
       it.copyCount += 1;
       it.lastCopiedAt = Date.now();
     }

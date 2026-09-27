@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import { Command } from "cmdk";
-import { ItemRow } from "./ItemRow";
+import { ContextMenu } from "./ContextMenu";
 import { TypeBadge } from "./TypeBadge";
-import { ALL_TYPES, backendLabel, useStore } from "../store";
+import { VirtualList } from "./VirtualList";
+import { backendLabel, useStore } from "../store";
 import type { ContentType } from "../lib/api";
 
-/** 筛选栏只展示高频类型，完整列表在设置里 */
+/** 筛选栏只展示高频类型，完整列表留给设置页 */
 const QUICK_TYPES: ContentType[] = ["json", "sql", "code", "url", "jwt", "text"];
 
 export function Palette() {
@@ -16,19 +17,47 @@ export function Palette() {
     void useStore.getState().init();
   }, []);
 
-  // 选中项变化时，拉取它可用的工具箱动作
+  // 选中项的类型变了才重新拉工具箱动作。按 items 整个依赖会
+  // 在任何一次列表刷新后都重拉一遍，没必要
+  const activeType = s.items[s.selected]?.contentType;
   useEffect(() => {
-    const it = s.items[s.selected];
-    if (it) void useStore.getState().loadActions(it);
+    if (activeType) void useStore.getState().loadActions(activeType);
     else useStore.setState({ actions: [] });
-  }, [s.items, s.selected]);
+  }, [activeType]);
 
-  // 全局快捷键（输入框之外的组合键）
+  // 全局快捷键。
+  //
+  // ↑↓/Home/End 以及 cmdk 的 vim 键位在这里接管：cmdk 是靠在 DOM 里
+  // 查已渲染的项来导航的（见 cmdk 的 k()/G()），而列表做了虚拟化，
+  // 它只看得到窗口内的项，算出来的下一项是错的。捕获阶段 +
+  // stopPropagation 就是为了让 cmdk 收不到这些按键。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState();
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
+
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        st.move(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (!mod && (e.key === "Home" || e.key === "End")) {
+        e.preventDefault();
+        e.stopPropagation();
+        st.jump(e.key === "Home" ? 0 : st.items.length - 1);
+        return;
+      }
+      // cmdk 默认把 ⌃J/⌃N 当下一个、⌃K/⌃P 当上一个。上面已经接管，
+      // 所以下面 Command 上也关了 vimBindings —— 万一拦截没生效，
+      // 也不能让 cmdk 再按「窗口内导航」那套错逻辑动一次
+      if (e.ctrlKey && !e.altKey && !e.metaKey && (k === "j" || k === "n" || k === "k" || k === "p")) {
+        e.preventDefault();
+        e.stopPropagation();
+        st.move(k === "j" || k === "n" ? 1 : -1);
+        return;
+      }
 
       if (mod && k === "k") {
         e.preventDefault();
@@ -37,7 +66,8 @@ export function Palette() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (st.query) st.setQuery("");
+        if (st.menu) st.closeMenu();
+        else if (st.query) st.setQuery("");
         else inputRef.current?.blur();
         return;
       }
@@ -57,11 +87,12 @@ export function Palette() {
       }
     };
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   const selected = s.items[s.selected];
+  const filtered = s.types.length > 0 || s.favoriteOnly;
 
   return (
     <div className="flex min-h-screen justify-center bg-zinc-950 pt-[11vh] text-zinc-300 antialiased">
@@ -69,7 +100,7 @@ export function Palette() {
         <Command
           label="DevClip 剪贴板"
           shouldFilter={false}
-          loop
+          vimBindings={false}
           value={selected ? String(selected.id) : ""}
           onValueChange={(v) => {
             const i = s.items.findIndex((x) => String(x.id) === v);
@@ -130,38 +161,22 @@ export function Palette() {
                 {t}
               </button>
             ))}
-            {s.types.length > 0 && (
-              <button
-                type="button"
-                onClick={() => ALL_TYPES.forEach(() => {})}
-                className="ml-auto text-[11px] text-zinc-600 hover:text-zinc-400"
-              >
-                共 {s.items.length} 条
-              </button>
-            )}
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-zinc-600">
+              {filtered && (
+                <button
+                  type="button"
+                  onClick={s.clearFilters}
+                  className="rounded px-1.5 py-0.5 transition-colors hover:bg-white/5 hover:text-zinc-300"
+                >
+                  清除筛选
+                </button>
+              )}
+              共 {s.items.length} 条
+            </span>
           </div>
 
-          {/* 列表 */}
-          <Command.List className="max-h-[min(420px,50vh)] overflow-y-auto overscroll-contain p-1.5">
-            {s.loading ? (
-              <div className="px-3 py-10 text-center text-sm text-zinc-600">加载中…</div>
-            ) : (
-              <>
-                <Command.Empty className="px-3 py-10 text-center text-sm text-zinc-600">
-                  没有匹配「{s.query}」的记录
-                </Command.Empty>
-                {s.items.map((it, i) => (
-                  <ItemRow
-                    key={it.id}
-                    item={it}
-                    active={i === s.selected}
-                    onSelect={(id) => void s.paste(id)}
-                    onToggleFavorite={(id) => void s.toggleFavorite(id)}
-                  />
-                ))}
-              </>
-            )}
-          </Command.List>
+          {/* 列表（虚拟化，见 VirtualList） */}
+          <VirtualList />
 
           {/* 工具箱动作条 */}
           {selected && s.actions.length > 0 && (
@@ -192,6 +207,7 @@ export function Palette() {
                 <span>↵ 粘贴</span>
                 <span>⌘C 复制</span>
                 <span>⌘D 收藏</span>
+                <span>右键 更多</span>
                 <span className="ml-auto flex items-center gap-2">
                   {selected && <TypeBadge type={selected.contentType} />}
                   <span className="rounded bg-white/5 px-1.5 py-0.5 text-zinc-500">
@@ -203,6 +219,8 @@ export function Palette() {
           </div>
         </Command>
       </div>
+
+      <ContextMenu />
     </div>
   );
 }
