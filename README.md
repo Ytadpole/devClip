@@ -46,7 +46,14 @@
 ```bash
 pnpm install
 pnpm dev       # http://localhost:1420
-pnpm build     # tsc 类型检查 + vite 打包（唯一的校验命令）
+pnpm build     # tsc 类型检查 + vite 打包
+pnpm test      # 端到端验收（Playwright，会自动起 dev server）
+```
+
+首次跑 `pnpm test` 要先下载浏览器，约 115MB：
+
+```bash
+pnpm exec playwright install chromium
 ```
 
 `pnpm tauri dev` 需要 Rust 与 webkit2gtk，尚未安装。
@@ -62,6 +69,7 @@ pnpm build     # tsc 类型检查 + vite 打包（唯一的校验命令）
 | 数据 | SQLite + FTS5 trigram（阶段 4） |
 | 状态 | Zustand |
 | 样式 | Tailwind CSS v4 + cmdk |
+| 验收 | Playwright（`e2e/`） |
 | 包管理 | pnpm |
 
 ## 文档

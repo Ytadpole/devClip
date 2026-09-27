@@ -10,6 +10,12 @@ lerna-debug.log*
 # 设计文档暂不入版本库
 docs/*
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 node_modules
 dist
 dist-ssr

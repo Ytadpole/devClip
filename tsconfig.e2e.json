@@ -1,0 +1,22 @@
+{
+  // e2e 与 playwright 配置的类型检查。刻意与 src 分开：
+  // 测试代码要 node 类型和 DOM，产物也不进 vite 打包。
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}
