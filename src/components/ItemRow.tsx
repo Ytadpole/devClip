@@ -94,9 +94,12 @@ export function ItemRow({ item, active, onSelect, onToggleFavorite, onContextMen
         </svg>
       </button>
 
-      {/* 选中态左侧色条，呼应类型色 */}
+      {/* 选中态左侧色条，呼应类型色。
+          absolute 的包含块是 padding box：left-0 会落在 border-l-2 内侧 2px，
+          不写 top 则退回静态位置（也就是 py-2.5 之下 10px），
+          色条就会错位并溢出到下一行。left-[-2px] + top-0 才对齐边框。 */}
       <span
-        className={`absolute left-0 h-full w-[2px] ${TYPE_META[item.contentType].bar} ${
+        className={`absolute left-[-2px] top-0 h-full w-[2px] ${TYPE_META[item.contentType].bar} ${
           active ? "opacity-100" : "opacity-0"
         }`}
         aria-hidden
