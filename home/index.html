@@ -13,7 +13,9 @@
   --hover:#ffffff0a; --shadow:#0006;
   --sky:#38bdf8; --amber:#fbbf24; --violet:#a78bfa; --emerald:#34d399;
   --on-fg:#09090b; --on-fg-hi:#ffffff;
-  --m-board:#2a2a2e; --m-clip:#38bdf8; --m-line:#52525b;
+  --m-board:#212124; --m-clip:#38bdf8; --m-hl:#ffffff0f;
+  --m-a:#fbbf24; --m-b:#38bdf8; --m-c:#52525b;
+  --m-line-l:#8b8b95; --m-line-d:#5b5b66;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Noto Sans Mono CJK SC",monospace;
 }
 /* 亮色：不用纯白，长时间阅读刺眼；描边也相应加重 */
@@ -23,7 +25,9 @@ html[data-theme=light]{
   --hover:#0f172a08; --shadow:#0f172a1a;
   --sky:#0369a1; --amber:#b45309; --violet:#6d28d9; --emerald:#047857;
   --on-fg:#fafafa; --on-fg-hi:#ffffff;
-  --m-board:#e4e4e7; --m-clip:#0284c7; --m-line:#a1a1aa;
+  --m-board:#ffffff; --m-clip:#0284c7; --m-hl:#0f172a08;
+  --m-a:#d97706; --m-b:#0284c7; --m-c:#a1a1aa;
+  --m-line-l:#71717a; --m-line-d:#a1a1aa;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -45,10 +49,17 @@ nav{display:flex;align-items:center;gap:28px;height:56px}
 .logo{display:flex;align-items:center;gap:9px;font-family:var(--mono);
   font-weight:600;font-size:15px;letter-spacing:-.2px;margin-right:auto}
 .logo em{font-style:normal;color:var(--sky)}
-.mark{width:21px;height:21px;flex-shrink:0}
+/* logo 取自软件界面的标志性元素：调色板窗口 + 左侧类型色条
+   + 选中行高亮，与 ItemRow 里的色条是同一套配色 */
+.mark{width:22px;height:22px;flex-shrink:0}
 .mark .m-board{fill:var(--m-board)}
 .mark .m-clip{fill:var(--m-clip)}
-.mark .m-line{stroke:var(--m-line);stroke-width:1.5;stroke-linecap:round;fill:none}
+.mark .m-bar-hl{fill:var(--m-hl)}
+.mark .m-bar-a{fill:var(--m-a)}
+.mark .m-bar-b{fill:var(--m-b)}
+.mark .m-bar-c{fill:var(--m-c)}
+.mark .m-line-l{fill:var(--m-line-l)}
+.mark .m-line-d{fill:var(--m-line-d)}
 
 /* 主题切换：两个图标叠放，按当前主题显示另一个 */
 .theme-btn{
@@ -213,9 +224,28 @@ footer a:hover{color:var(--fg)}
     <nav>
       <div class="logo">
         <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-          <rect x="7" y="4" width="18" height="24" rx="3.2" class="m-board"/>
-          <rect x="12.5" y="1.6" width="7" height="4.6" rx="1.5" class="m-clip"/>
-          <path d="M12 21.5v-6M12 15.5l6.5-2.2M12 18.5l5-1.7" class="m-line"/>
+          <clipPath id="m-board-clip">
+            <rect x="3.5" y="5" width="25" height="23" rx="3.4"/>
+          </clipPath>
+          <!-- 板身：圆角矩形，四边留出 3.5px 让圆角完整显示 -->
+          <rect x="3.5" y="5" width="25" height="23" rx="3.4" class="m-board"/>
+          <rect x="8" y="2" width="9" height="5.4" rx="1.6" class="m-clip"/>
+          <!-- 顶部搜索区：与下方行区之间不描边，直接压一层高亮 -->
+          <path d="M3.5 8.4h25v4.2h-25z" class="m-bar-hl" clip-path="url(#m-board-clip)"/>
+          <!-- 三行列表：等高 4.2，色条 2.4 宽，底边留 1.6。
+               色条左边缘与板身同为 x=3.5，靠板身的圆角自然裁切 -->
+          <g clip-path="url(#m-board-clip)">
+            <rect x="3.5" y="14.6" width="2.4" height="4.2" class="m-bar-a"/>
+            <rect x="8.6" y="15.9" width="12" height="1.7" rx=".85" class="m-line-l"/>
+          </g>
+          <g clip-path="url(#m-board-clip)">
+            <rect x="3.5" y="19.6" width="2.4" height="4.2" class="m-bar-b"/>
+            <rect x="8.6" y="20.9" width="16" height="1.6" rx=".8" class="m-line-d"/>
+          </g>
+          <g clip-path="url(#m-board-clip)">
+            <rect x="3.5" y="24.6" width="2.4" height="3.4" class="m-bar-c"/>
+            <rect x="8.6" y="25.7" width="9.5" height="1.6" rx=".8" class="m-line-d"/>
+          </g>
         </svg>
         <span>Dev<em>Clip</em></span>
       </div>
