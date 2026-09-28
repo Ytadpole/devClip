@@ -101,6 +101,16 @@ p:last-child{margin-bottom:0}
 .b-next{background:#38bdf81f;color:#7dd3fc}
 .b-todo{background:#ffffff0a;color:var(--faint)}
 .node p{font-size:14px;margin:6px 0 0}
+/* 三段式：做了什么 / 实现了什么 / 提升了什么 */
+.node p b{
+  font-weight:500;color:var(--fg);
+  display:inline-block;min-width:2.6em;
+  font-size:12.5px;letter-spacing:.5px;
+}
+.node p b::after{content:""}
+.node.done p b:first-child{color:var(--emerald)}
+.node.next p b:first-child{color:var(--sky)}
+.node p strong{color:var(--emerald);font-weight:600}
 .meta{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:7px}
 
 /* ── 数据条 ── */
@@ -222,73 +232,71 @@ footer a:hover{color:var(--fg)}
       <div class="node done">
         <div class="node-top">
           <span class="st">2026-09-27</span>
-          <h3>阶段 0 · 环境与脚手架</h3>
+          <h3>阶段 0 · 工程与工具链</h3>
           <span class="badge b-done">已完成</span>
         </div>
-        <p>Tauri 2 脚手架，React 19 + TypeScript 6 + Vite 8 + Tailwind v4，Rust 工具链与 webkit2gtk 就位。</p>
-        <div class="meta">5 commits · 从 0 到能起一个空窗口</div>
+        <p>
+          <b>做了</b> Tauri 2 + React 19 + TypeScript 6 + Tailwind v4 脚手架，
+          打通 Rust 工具链与 Linux 桌面依赖。
+          <br><b>实现</b> 跨平台桌面应用骨架与构建链路。
+          <br><b>提升</b> 具备 macOS / Windows / Linux 三端同时推进的基础。
+        </p>
       </div>
 
       <div class="node done">
         <div class="node-top">
           <span class="st">2026-09-27</span>
-          <h3>阶段 1 · 调色板界面 + Mock 数据</h3>
+          <h3>阶段 1 · 调色板界面</h3>
           <span class="badge b-done">已完成</span>
         </div>
         <p>
-          零 Rust 把交互全部调通。虚拟列表（148 条只渲染 6 行）、80ms 搜索防抖、
+          <b>做了</b> 完整调色板交互：虚拟列表、搜索防抖、类型筛选、收藏、
           右键菜单、图片缩略图。
-          <br>过程中发现虚拟化与 cmdk 冲突：cmdk 靠 DOM 里的
-          <code>aria-selected</code> 定位当前项，窗口化后只看得到窗口内的项，
-          <code>Enter</code> 会静默失效。键盘导航因此改为自管。
+          <br><b>实现</b> 148 条数据只渲染 6 行，搜索输入不卡顿，
+          全流程 18 条自动化用例守护。
+          <br><b>提升</b> 交互层全部跑通且零 Rust 依赖，后续换后端无需返工。
         </p>
-        <div class="meta">2 commits · 18 条 e2e 用例</div>
       </div>
 
       <div class="node done">
         <div class="node-top">
           <span class="st">2026-09-28</span>
-          <h3>阶段 2 · 打通 Tauri IPC</h3>
+          <h3>阶段 2 · 前后端打通</h3>
           <span class="badge b-done">已完成</span>
         </div>
         <p>
-          新增 <code>tauri.ts</code>，11 个方法一一对应 Rust 侧 11 个
-          <code>#[tauri::command]</code>。前端一行未改，
-          通过 <code>VITE_BACKEND=tauri</code> 完成数据源切换。
+          <b>做了</b> 定义并实现 11 个接口的前后端双份契约。
+          <br><b>实现</b> 真实 Rust 后端可替换 mock，前端一行未改。
+          <br><b>提升</b> 界面与数据源解耦，Mock 与真实后端可随时切换。
         </p>
-        <div class="meta">1 commit · 前后端契约首次对齐</div>
       </div>
 
       <div class="node done">
         <div class="node-top">
           <span class="st">2026-09-28</span>
-          <h3>阶段 3 · detect.rs 内容识别器</h3>
+          <h3>阶段 3 · 内容识别器</h3>
           <span class="badge b-done">已完成</span>
         </div>
         <p>
-          第一个 Rust 文件。纯函数、无 async、无系统调用。
-          13 条规则按固定顺序判定，先匹配到的胜出。
-          67 条单元测试，86 条带标注真实内容准确率 <strong>100%</strong>。
-          <br>三个 bug 都是测试逼出来的：base64url 字母表误用标准 base64
-          的 <code>+ /</code>（实际应为 <code>- _</code>）导致含 <code>_</code> 的
-          JWT 签名被拒；DDL 规则用 <code>contains</code> 把散文吞成 SQL；
-          异常的包名前缀要求挡掉了 Python 的 <code>RuntimeError</code>。
+          <b>做了</b> DevClip 的核心能力——13 种开发者内容类型的自动识别。
+          <br><b>实现</b> JSON / JWT / SQL / 异常栈 / Base64 等类型判定，
+          86 条真实样本准确率 <strong>100%</strong>，67 条单测覆盖。
+          <br><b>提升</b> 从「存剪贴板」变成「理解剪贴板」，这是与普通
+          剪贴板管理器的分界线。
         </p>
-        <div class="meta">1 commit · 67 tests · clippy 0 警告</div>
       </div>
 
       <div class="node next">
         <div class="node-top">
           <span class="st">进行中</span>
-          <h3>阶段 4 · SQLite + 历史记录</h3>
+          <h3>阶段 4 · 持久化与搜索</h3>
           <span class="badge b-next">下一个</span>
         </div>
         <p>
-          <code>db.rs</code> / <code>repo.rs</code> / <code>models.rs</code>，
-          FTS5 虚表与触发器，<code>upsert</code> 去重。
-          验收线是 1000 条数据下搜索响应 &lt; 50ms。
+          <b>要做</b> SQLite 存储层，FTS5 全文索引与去重入库。
+          <br><b>实现</b> 万级历史记录的毫秒级检索，1000 条下响应 &lt; 50ms。
+          <br><b>提升</b> 从内存假数据变为真正的本地历史库。
         </p>
-        <div class="meta">已知踩坑：MATCH 查询串需转义 · 必须开 bundled feature</div>
       </div>
 
       <div class="node todo">
@@ -297,7 +305,11 @@ footer a:hover{color:var(--fg)}
           <h3>阶段 5 · 监听 + 快捷键 + 粘贴</h3>
           <span class="badge b-todo">真正可用</span>
         </div>
-        <p>剪贴板监听、全局快捷键、模拟按键粘贴。做到这里就能每天用了。</p>
+        <p>
+          <b>要做</b> 全局剪贴板监听、快捷键呼出、模拟按键粘贴。
+          <br><b>实现</b> 任意程序 ⌘C → 快捷键 → 搜索 → 方向键 → Enter 粘贴。
+          <br><b>提升</b> 跨程序流转闭环，成为每天都在用的工具。
+        </p>
       </div>
 
       <div class="node todo">
@@ -306,16 +318,25 @@ footer a:hover{color:var(--fg)}
           <h3>阶段 6 · 开发者工具箱</h3>
           <span class="badge b-todo">待开始</span>
         </div>
-        <p>动作注册表，UI 从 <code>availableActions()</code> 动态渲染，不硬编码类型判断。</p>
+        <p>
+          <b>要做</b> 识别类型对应的可执行操作，动作注册表驱动。
+          <br><b>实现</b> JSON 格式化、JWT 解码、Base64 编解码、SQL 提取表名
+          等一步到位。
+          <br><b>提升</b> 从「看」升级为「改」，省去切终端的往返。
+        </p>
       </div>
 
       <div class="node todo">
         <div class="node-top">
           <span class="st">护城河</span>
-          <h3>阶段 7 · 敏感信息 + 托盘 + 设置</h3>
+          <h3>阶段 7 · 安全与体验</h3>
           <span class="badge b-todo">待开始</span>
         </div>
-        <p>密钥识别与自动过期、托盘图标、保留期清理。</p>
+        <p>
+          <b>要做</b> 密钥识别、自动过期清理、系统托盘、设置页。
+          <br><b>实现</b> 敏感内容默认不入库、到期自动消失。
+          <br><b>提升</b> 建立「放心用它管理剪贴板」的信任基础。
+        </p>
       </div>
 
       <div class="node todo">
@@ -324,16 +345,24 @@ footer a:hover{color:var(--fg)}
           <h3>阶段 8–10 · Linux / Windows / 发布</h3>
           <span class="badge b-todo">待开始</span>
         </div>
-        <p>X11 selection 监听与 XTEST、Win32 消息钩子、CI 矩阵与产物分发。</p>
+        <p>
+          <b>要做</b> Linux / Windows 原生适配与三端自动发布。
+          <br><b>实现</b> X11 与 Win32 的剪贴板监听，CI 矩阵产出安装包。
+          <br><b>提升</b> 从自用工具变为可分发给任意开发者的产品。
+        </p>
       </div>
 
       <div class="node todo">
         <div class="node-top">
           <span class="st">P2</span>
-          <h3>阶段 11+ · AI</h3>
+          <h3>阶段 11+ · AI 能力</h3>
           <span class="badge b-todo">待开始</span>
         </div>
-        <p>解释、翻译、总结。先把 API key 存储和隐私提示想清楚 —— 剪贴板内容会全部发到远端。</p>
+        <p>
+          <b>要做</b> 选中内容直接交给模型处理。
+          <br><b>实现</b> 异常栈解释、翻译、总结、SQL 优化建议。
+          <br><b>提升</b> 把工具箱从"处理已知格式"推到"回答问题"。
+        </p>
       </div>
 
     </div>
