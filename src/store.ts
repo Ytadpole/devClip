@@ -76,12 +76,49 @@ let queryTimer: ReturnType<typeof setTimeout> | undefined;
  *  只有序号等于最新一次的请求才允许写回 state。 */
 let reqSeq = 0;
 
-/** 唯一的查询入口。返回 null 表示响应已过期，调用方应当丢弃。 */
+/**
+ * 唯一的查询入口。返回 null 表示响应已过期，调用方应当丢弃。
+ *
+ * 阶段 4 起 Rust 侧会返回 Err(String)（可直接展示给用户的中文提示）。
+ * 这里接住并塞进 status —— 不接的话数据库出错时界面是空白，
+ * 用户只会觉得「搜不出来」，看不到任何原因。
+ */
 async function fetchItems(): Promise<ClipboardItem[] | null> {
   const { query, types, favoriteOnly } = useStore.getState();
   const seq = ++reqSeq;
-  const items = await api.list({ text: query, types, favoriteOnly, limit: PAGE_LIMIT });
-  return seq === reqSeq ? items : null;
+  try {
+    const items = await api.list({ text: query, types, favoriteOnly, limit: PAGE_LIMIT });
+    return seq === reqSeq ? items : null;
+  } catch (e) {
+    if (seq === reqSeq) {
+      useStore.getState().say(errorText(e), "err");
+    }
+    return null;
+  }
+}
+
+function errorText(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+/**
+ * 跑一个会失败的后端调用，失败时把可读文案显示在状态栏。
+ *
+ * Rust 侧的错误已经翻成能直接展示的中文（"删除失败：数据库错误: ..."），
+ * 所以优先用后端给的文案，只在拿不到时才用 fallback 兜底 ——
+ * 宁可重复也不能丢信息。
+ */
+async function attempt(fallback: string, run: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await run();
+    return true;
+  } catch (e) {
+    const msg = e === undefined || e === null ? "" : errorText(e);
+    useStore.getState().say(msg || fallback, "err");
+    return false;
+  }
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -170,25 +207,28 @@ export const useStore = create<State>((set, get) => ({
     set({ actions });
   },
 
+  // 以下都是「操作 + 重新拉取」的形状。阶段 4 起 Rust 会返回
+  // Err(String)，所以统一用 attempt 包一层：出错时把可读的
+  // 提示显示在状态栏，而不是让 rejected promise 悄悄溜走
   async toggleFavorite(id) {
-    const now = await api.toggleFavorite(id);
+    if (!(await attempt("切换收藏失败", () => api.toggleFavorite(id)))) return;
     await get().refresh();
-    get().say(now ? "已收藏" : "已取消收藏");
+    get().say("已切换收藏");
   },
 
   async copy(id) {
-    await api.copyToClipboard(id);
+    if (!(await attempt("复制失败", () => api.copyToClipboard(id)))) return;
     get().say("已复制到剪贴板");
   },
 
   async paste(id) {
-    await api.paste(id);
+    if (!(await attempt("粘贴失败", () => api.paste(id)))) return;
     await get().refresh();
     get().say("已粘贴");
   },
 
   async remove(id) {
-    await api.remove([id]);
+    if (!(await attempt("删除失败", () => api.remove([id])))) return;
     await get().refresh();
     get().say("已删除");
   },

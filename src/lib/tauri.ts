@@ -39,11 +39,11 @@ export const tauriApi: ClipboardApi = {
   },
 
   async copyToClipboard(id: number): Promise<void> {
-    return invoke("copy_to_clipboard", { id });
+    await invoke("copy_to_clipboard", { id });
   },
 
   async paste(id: number): Promise<void> {
-    return invoke("paste", { id });
+    await invoke("paste", { id });
   },
 
   async availableActions(t: ContentType): Promise<ToolboxAction[]> {
@@ -60,5 +60,23 @@ export const tauriApi: ClipboardApi = {
 
   async setSettings(patch: Partial<Settings>): Promise<Settings> {
     return invoke("set_settings", { patch });
+  },
+};
+
+/**
+ * 阶段 4 起可用：把一条内容写进真实数据库。
+ *
+ * 不在 ClipboardApi 里 —— 那是历史记录的读写契约，而入库是
+ * 阶段 5「剪贴板监听」内部要用的入口，前端调色板不直接用它。
+ * 单独挂在 tauriApi 上，等阶段 5 接上监听再收进 backend。
+ */
+export const tauriDb = {
+  /** 入库并去重，返回最终那条记录 */
+  add(content: string, sourceApp?: string): Promise<ClipboardItem> {
+    return invoke("add_item", { content, sourceApp });
+  },
+  /** 当前历史条数，测试和调试用 */
+  count(): Promise<number> {
+    return invoke("item_count");
   },
 };

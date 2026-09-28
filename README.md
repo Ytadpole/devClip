@@ -27,8 +27,8 @@
 
 ## 当前进度
 
-**阶段 0–1 完成，下一步阶段 2。** Tauri 2 脚手架 + React 调色板界面，
-数据来自内存 mock，尚未接 Rust。
+**阶段 0–4 完成，下一步阶段 5。** 数据从内存 mock 换成了真实的
+SQLite + FTS5 本地库。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -36,10 +36,11 @@
 | 1 | UI + mock 数据 | ✅ |
 | 2 | 端口-适配器接线（换 tauri 后端） | ✅ |
 | 3 | `detect.rs` 内容识别器（纯 Rust） | ✅ 67 测试，准确率 100% |
-| 4 | SQLite + FTS5 历史记录 | ⬜ |
+| 4 | SQLite + FTS5 历史记录 | ✅ 92 测试，1000 条搜索 2.2ms |
 | 5 | 监听 + 快捷键 + 粘贴 | ⬜ |
 
-阶段 2 起需要 Rust 工具链与 webkit2gtk 开发包，本机尚未安装。
+数据落在 `~/.local/share/com.devclip.app/devclip.db`（WAL 模式）。
+`cd src-tauri && cargo run --example seed` 可灌 1000 条假数据试搜索性能。
 
 ## 开发
 

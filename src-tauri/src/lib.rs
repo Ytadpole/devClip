@@ -1,44 +1,34 @@
 /**
- * Rust 侧 —— 阶段 2：打通 IPC
+ * Rust 侧 —— 阶段 4：SQLite + FTS5
  *
  * 与 src/lib/api.ts 的 ClipboardApi 一一对应。
- * 阶段 2 返回硬编码假数据，阶段 4 换成 SQLite + FTS5。
+ *
+ * 分层：
+ * - db.rs   连接、PRAGMA、schema、FTS5 虚表与触发器
+ * - repo.rs 全部 SQL（upsert 去重、query 过滤、增删改）
+ * - 本文件   只做「取连接 → 调 repo → 返回」，不写 SQL
  *
  * 字段名约定：serde rename_all = "camelCase"，
  * 与前端 api.ts 的 camelCase 字段对齐。
  */
+// db / repo 设为 pub 是给 examples/seed.rs 用的：
+// 它要直接调 upsert 灌数据，绕不过这层
+pub mod db;
 mod detect;
+pub mod repo;
 
+use db::DbError;
+use repo::{ClipboardItem, Query};
 use serde::{Deserialize, Serialize};
+use tauri::{Manager, State};
 
-// ── 与 api.ts 对应的类型 ─────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClipboardItem {
-    pub id: i64,
-    pub content: String,
-    pub content_type: String,
-    pub preview: String,
-    pub image_path: Option<String>,
-    pub byte_size: i64,
-    pub copy_count: i64,
-    pub source_app: Option<String>,
-    pub created_at: i64,
-    pub last_copied_at: i64,
-    pub favorite: bool,
-    pub sensitive: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Query {
-    pub text: Option<String>,
-    pub types: Option<Vec<String>>,
-    pub favorite_only: Option<bool>,
-    pub since: Option<i64>,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
+/// 注入给所有命令的数据库连接。
+///
+/// rusqlite::Connection 不是 Send（内部有裸指针），而 Tauri 的
+/// managed state 要求 Send + Sync，所以必须用 Mutex 包一层。
+/// 命令都是同步的，持锁期间不会跨 await 点，不存在死锁风险
+pub struct Db {
+    pub conn: std::sync::Mutex<rusqlite::Connection>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,92 +76,6 @@ impl ActionResult {
     }
 }
 
-// ── 硬编码假数据 ─────────────────────────────────────────────────
-
-fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64
-}
-
-fn sample_items() -> Vec<ClipboardItem> {
-    let t = now();
-    let m = 60_000;
-    vec![
-        ClipboardItem {
-            id: 1,
-            content: r#"{"name":"andy","age":18,"tags":["dev","rust"],"active":true}"#.into(),
-            content_type: "json".into(),
-            preview: r#"{"name":"andy","age":18,"tags":["dev","rust"],"active":true}"#.into(),
-            image_path: None,
-            byte_size: 60,
-            copy_count: 3,
-            source_app: Some("VS Code".into()),
-            created_at: t - 2 * m,
-            last_copied_at: t - 2 * m,
-            favorite: true,
-            sensitive: false,
-        },
-        ClipboardItem {
-            id: 2,
-            content: "select * from users where id = 1".into(),
-            content_type: "sql".into(),
-            preview: "select * from users where id = 1".into(),
-            image_path: None,
-            byte_size: 32,
-            copy_count: 1,
-            source_app: Some("DataGrip".into()),
-            created_at: t - 5 * m,
-            last_copied_at: t - 5 * m,
-            favorite: false,
-            sensitive: false,
-        },
-        ClipboardItem {
-            id: 3,
-            content: "https://github.com/tauri-apps/tauri".into(),
-            content_type: "url".into(),
-            preview: "https://github.com/tauri-apps/tauri".into(),
-            image_path: None,
-            byte_size: 38,
-            copy_count: 2,
-            source_app: Some("Firefox".into()),
-            created_at: t - 10 * m,
-            last_copied_at: t - 10 * m,
-            favorite: true,
-            sensitive: false,
-        },
-        ClipboardItem {
-            id: 4,
-            content: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig".into(),
-            content_type: "jwt".into(),
-            preview: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig".into(),
-            image_path: None,
-            byte_size: 149,
-            copy_count: 1,
-            source_app: Some("Postman".into()),
-            created_at: t - 18 * m,
-            last_copied_at: t - 18 * m,
-            favorite: false,
-            sensitive: true,
-        },
-        ClipboardItem {
-            id: 5,
-            content: "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'".into(),
-            content_type: "code".into(),
-            preview: "docker ps -a --format 'table {{.Names}}\\t{{.Status}}'".into(),
-            image_path: None,
-            byte_size: 48,
-            copy_count: 5,
-            source_app: Some("Windows Terminal".into()),
-            created_at: t - 24 * m,
-            last_copied_at: t - 24 * m,
-            favorite: false,
-            sensitive: false,
-        },
-    ]
-}
-
 fn default_settings() -> Settings {
     Settings {
         hotkey: "Alt+Shift+V".into(),
@@ -184,39 +88,82 @@ fn default_settings() -> Settings {
 }
 
 // ── Tauri commands ───────────────────────────────────────────────
+//
+// SQL 全在 repo.rs，这里只做「取连接 → 调 repo → 返回」。
 
-#[tauri::command]
-fn list_items(_q: Query) -> Vec<ClipboardItem> {
-    // TODO: 阶段 4 用 SQLite FTS5 做真实过滤
-    // content_type 现在由 detect 判定，而不是硬编码在 sample_items 里
-    sample_items()
-        .into_iter()
-        .map(|mut it| {
-            it.content_type = detect::detect(&it.content).as_str().to_string();
-            it
-        })
-        .collect()
+/// 命令执行出错时返回可读信息，而不是让 Tauri 抛裸错误。
+/// 前端会把它显示在状态栏，所以措辞要能指导下一步
+fn err(context: &str, e: DbError) -> String {
+    format!("{context}：{e}")
+}
+
+/// 取连接。锁中毒说明某条命令 panic 过，那是真 bug，
+/// 但没必要让整个应用崩在这里 —— 报错让用户能继续用其他功能
+fn lock<'a>(
+    state: &'a State<Db>,
+) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
+    state
+        .conn
+        .lock()
+        .map_err(|_| "数据库连接已失效，请重启应用".to_string())
 }
 
 #[tauri::command]
-fn get_item(id: i64) -> Option<ClipboardItem> {
-    sample_items().into_iter().find(|i| i.id == id)
+fn list_items(state: State<Db>, q: Query) -> Result<Vec<ClipboardItem>, String> {
+    let c = lock(&state)?;
+    repo::list(&c, &q).map_err(|e| err("查询历史失败", e))
 }
 
 #[tauri::command]
-fn toggle_favorite(_id: i64) -> bool {
-    // TODO: 阶段 4 持久化
-    true
+fn get_item(state: State<Db>, id: i64) -> Result<Option<ClipboardItem>, String> {
+    let c = lock(&state)?;
+    repo::get(&c, id).map_err(|e| err("读取失败", e))
 }
 
 #[tauri::command]
-fn remove_items(_ids: Vec<i64>) {
-    // TODO: 阶段 4 持久化
+fn toggle_favorite(state: State<Db>, id: i64) -> Result<bool, String> {
+    let c = lock(&state)?;
+    repo::toggle_favorite(&c, id).map_err(|e| err("切换收藏失败", e))
 }
 
 #[tauri::command]
-fn clear_all() {
-    // TODO: 阶段 4 持久化
+fn remove_items(state: State<Db>, ids: Vec<i64>) -> Result<(), String> {
+    let c = lock(&state)?;
+    repo::remove(&c, &ids).map_err(|e| err("删除失败", e))
+}
+
+#[tauri::command]
+fn clear_all(state: State<Db>) -> Result<(), String> {
+    let c = lock(&state)?;
+    repo::clear(&c).map_err(|e| err("清空失败", e))
+}
+
+/// 阶段 5 的剪贴板监听要用：入库去重走这里
+#[tauri::command]
+fn add_item(
+    state: State<Db>,
+    content: String,
+    source_app: Option<String>,
+) -> Result<ClipboardItem, String> {
+    let c = lock(&state)?;
+    let (id, _) = repo::upsert(
+        &c,
+        &repo::NewItem {
+            content,
+            source_app,
+            image_path: None,
+        },
+    )
+    .map_err(|e| err("保存失败", e))?;
+    repo::get(&c, id)
+        .map_err(|e| err("读取失败", e))?
+        .ok_or_else(|| "保存后读不到该条".to_string())
+}
+
+#[tauri::command]
+fn item_count(state: State<Db>) -> Result<i64, String> {
+    let c = lock(&state)?;
+    repo::count(&c).map_err(|e| err("统计失败", e))
 }
 
 #[tauri::command]
@@ -290,16 +237,36 @@ fn set_settings(_patch: serde_json::Value) -> Settings {
 
 // ── 入口 ─────────────────────────────────────────────────────────
 
+/// 数据库文件位置。Tauri 的 app_data_dir 在各平台分别是
+/// ~/.local/share、~/Library/Application Support、%APPDATA%
+fn db_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("devclip.db")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let path = db_path(app.handle());
+            let conn = db::open(&path)
+                .unwrap_or_else(|e| panic!("打开数据库失败 {}: {e}", path.display()));
+            app.manage(Db {
+                conn: std::sync::Mutex::new(conn),
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_items,
             get_item,
             toggle_favorite,
             remove_items,
             clear_all,
+            add_item,
+            item_count,
             copy_to_clipboard,
             paste,
             available_actions,
