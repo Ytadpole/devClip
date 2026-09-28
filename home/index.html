@@ -60,9 +60,16 @@ h1{font-size:clamp(30px,5.2vw,50px);line-height:1.15;letter-spacing:-1.2px;margi
 .btn-2:hover{border-color:#ffffff33;color:var(--fg)}
 
 /* ── 区块 ── */
-section{padding:64px 0;border-top:1px solid var(--line2)}
+section{padding:64px 0;border-top:1px solid var(--line2);scroll-margin-top:56px}
+/* 最后一个 section 是页面末尾，浏览器无法再往下滚，
+   锚点只能停在页脚位置。这里留一点余量让「技术栈」能滚到顶部，
+   代价是技术栈和页脚之间有一段空白 —— 换取导航可用。
+   用 margin-top 而非 padding，空白归页脚所有。 */
+/* 「技术栈」已并入最后一屏 section */
 h2{font-size:13px;font-family:var(--mono);color:var(--mute);font-weight:500;
    text-transform:uppercase;letter-spacing:1.4px;margin:0 0 30px}
+/* 同一 section 内的次级小标题 */
+h2.sub{margin:44px 0 22px}
 h3{font-size:16px;margin:0 0 8px;font-weight:600}
 p{color:var(--dim);margin:0 0 14px}
 p:last-child{margin-bottom:0}
@@ -139,7 +146,9 @@ p:last-child{margin-bottom:0}
 .sk b{font-size:14px;font-weight:500}
 
 /* ── 页脚 ── */
-footer{padding:40px 0 56px;border-top:1px solid var(--line2);color:var(--faint);font-size:13px;
+/* 页脚是最后一屏 section 的子元素 */
+footer{margin-top:40px;padding-top:28px;border-top:1px solid var(--line2);
+  color:var(--faint);font-size:13px;
   display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 footer a{color:var(--mute);text-decoration:none}
 footer a:hover{color:var(--fg)}
@@ -164,7 +173,7 @@ footer a:hover{color:var(--fg)}
       <div class="logo">Dev<span>Clip</span></div>
       <a href="#ability">能力</a>
       <a href="#road">历程</a>
-      <a href="#stack">技术栈</a>
+      <a href="#stats">进度</a>
       <a href="#commits">提交</a>
     </nav>
   </div>
@@ -368,7 +377,7 @@ footer a:hover{color:var(--fg)}
     </div>
   </section>
 
-  <section>
+  <section id="stats">
     <h2>当前进度</h2>
     <div class="stats">
       <div class="stat"><b style="color:#34d399">4</b><span>已完成阶段</span></div>
@@ -379,6 +388,9 @@ footer a:hover{color:var(--fg)}
     </div>
   </section>
 
+  <!-- 提交记录、技术栈、页脚合成最后一屏：页面末尾的 section
+       无法靠锚点滚到顶部（浏览器已到底），分开会让导航最后一项
+       点下去像没反应。合成一屏后导航项全部落在可定位的位置。 -->
   <section id="commits">
     <h2>提交记录</h2>
     <div class="commits">
@@ -393,10 +405,8 @@ footer a:hover{color:var(--fg)}
       <div class="crow"><span class="ch">cc64440</span><span class="cd">09-28</span><span class="cm">feat: 阶段 2 接线，前端打通 Tauri IPC</span></div>
       <div class="crow"><span class="ch">397562a</span><span class="cd">09-28</span><span class="cm">feat: 阶段 3 detect.rs，13 条内容识别规则</span></div>
     </div>
-  </section>
 
-  <section id="stack">
-    <h2>技术栈</h2>
+    <h2 class="sub">技术栈</h2>
     <div class="stack">
       <div class="sk"><em>UI</em><b>React 19 + TypeScript 6</b></div>
       <div class="sk"><em>构建</em><b>Vite 8</b></div>
@@ -407,12 +417,12 @@ footer a:hover{color:var(--fg)}
       <div class="sk"><em>样式</em><b>Tailwind v4 + cmdk</b></div>
       <div class="sk"><em>验收</em><b>Playwright</b></div>
     </div>
-  </section>
 
-  <footer>
-    <div>DevClip · 面向开发者的剪贴板 + 开发工具箱</div>
-    <div>macOS · Windows · Linux(X11) &nbsp;|&nbsp; <a href="#">GitHub</a></div>
-  </footer>
+    <footer>
+      <div>DevClip · 面向开发者的剪贴板 + 开发工具箱</div>
+      <div>macOS · Windows · Linux(X11) &nbsp;|&nbsp; <a href="#">GitHub</a></div>
+    </footer>
+  </section>
 
 </div>
 </body>
