@@ -8,10 +8,11 @@
 
 import type { ClipboardApi } from "./api";
 import { mockApi } from "./mock";
+import { tauriApi } from "./tauri";
 
 const impls: Record<string, ClipboardApi> = {
-  // 阶段 2：在这里加一行 "tauri": tauriApi
   mock: mockApi,
+  tauri: tauriApi,
 };
 
 /** 可在 .env 里覆盖：VITE_BACKEND=tauri */
