@@ -7,6 +7,7 @@
  * 字段名约定：serde rename_all = "camelCase"，
  * 与前端 api.ts 的 camelCase 字段对齐。
  */
+mod detect;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,14 +41,14 @@ pub struct Query {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolboxAction {
     pub id: String,
     pub label: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub hotkey: String,
@@ -59,7 +60,7 @@ pub struct Settings {
 }
 
 /// ActionResult 序列化为 { ok: true, value } 或 { ok: false, error }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActionResult {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,10 +71,18 @@ pub struct ActionResult {
 
 impl ActionResult {
     pub fn ok(v: impl Into<String>) -> Self {
-        ActionResult { ok: true, value: Some(v.into()), error: None }
+        ActionResult {
+            ok: true,
+            value: Some(v.into()),
+            error: None,
+        }
     }
     pub fn err(e: impl Into<String>) -> Self {
-        ActionResult { ok: false, value: None, error: Some(e.into()) }
+        ActionResult {
+            ok: false,
+            value: None,
+            error: Some(e.into()),
+        }
     }
 }
 
@@ -179,7 +188,14 @@ fn default_settings() -> Settings {
 #[tauri::command]
 fn list_items(_q: Query) -> Vec<ClipboardItem> {
     // TODO: 阶段 4 用 SQLite FTS5 做真实过滤
+    // content_type 现在由 detect 判定，而不是硬编码在 sample_items 里
     sample_items()
+        .into_iter()
+        .map(|mut it| {
+            it.content_type = detect::detect(&it.content).as_str().to_string();
+            it
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -218,17 +234,38 @@ fn available_actions(content_type: String) -> Vec<ToolboxAction> {
     // TODO: 阶段 6 从动作注册表动态返回
     match content_type.as_str() {
         "json" => vec![
-            ToolboxAction { id: "json.format".into(), label: "Format".into() },
-            ToolboxAction { id: "json.minify".into(), label: "Minify".into() },
-            ToolboxAction { id: "json.sort_keys".into(), label: "Sort Keys".into() },
+            ToolboxAction {
+                id: "json.format".into(),
+                label: "Format".into(),
+            },
+            ToolboxAction {
+                id: "json.minify".into(),
+                label: "Minify".into(),
+            },
+            ToolboxAction {
+                id: "json.sort_keys".into(),
+                label: "Sort Keys".into(),
+            },
         ],
         "jwt" => vec![
-            ToolboxAction { id: "jwt.decode_header".into(), label: "Decode Header".into() },
-            ToolboxAction { id: "jwt.decode_payload".into(), label: "Decode Payload".into() },
+            ToolboxAction {
+                id: "jwt.decode_header".into(),
+                label: "Decode Header".into(),
+            },
+            ToolboxAction {
+                id: "jwt.decode_payload".into(),
+                label: "Decode Payload".into(),
+            },
         ],
         "sql" => vec![
-            ToolboxAction { id: "sql.format".into(), label: "Format".into() },
-            ToolboxAction { id: "sql.tables".into(), label: "Extract Tables".into() },
+            ToolboxAction {
+                id: "sql.format".into(),
+                label: "Format".into(),
+            },
+            ToolboxAction {
+                id: "sql.tables".into(),
+                label: "Extract Tables".into(),
+            },
         ],
         _ => vec![],
     }
