@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevClip — 面向开发者的剪贴板</title>
+<meta name="description" content="DevClip 是面向开发者的跨平台剪贴板 + 开发工具箱。在剪贴板之上叠加一层开发者语义：自动识别 JSON / JWT / SQL / Base64 等内容类型，并提供可执行操作。">
+<style>
+:root{
+  --bg:#09090b; --panel:#111113; --line:#ffffff14; --line2:#ffffff0a;
+  --fg:#e4e4e7; --dim:#a1a1aa; --mute:#71717a; --faint:#52525b;
+  --sky:#38bdf8; --amber:#fbbf24; --violet:#a78bfa; --emerald:#34d399;
+  --rose:#fb7185; --lime:#a3e635; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Noto Sans Mono CJK SC",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","PingFang SC",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px}
+a{color:inherit}
+code{font-family:var(--mono);font-size:.88em;background:#ffffff0d;padding:.12em .42em;border-radius:4px;color:#d4d4d8}
+
+/* ── 顶栏 ── */
+header{
+  position:sticky; top:0; z-index:50; backdrop-filter:blur(12px);
+  background:#09090bcc; border-bottom:1px solid var(--line2);
+}
+nav{display:flex;align-items:center;gap:28px;height:56px}
+.logo{font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:-.2px;margin-right:auto}
+.logo span{color:var(--sky)}
+nav a{color:var(--mute);text-decoration:none;font-size:13.5px;transition:color .15s}
+nav a:hover{color:var(--fg)}
+
+/* ── 首屏 ── */
+.hero{padding:96px 0 72px;text-align:center}
+.kicker{
+  display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;
+  color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:5px 13px;margin-bottom:28px;
+}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px #34d39922}
+h1{font-size:clamp(30px,5.2vw,50px);line-height:1.15;letter-spacing:-1.2px;margin:0 0 20px;font-weight:650}
+.lead{font-size:17px;color:var(--dim);max-width:640px;margin:0 auto 34px;line-height:1.75}
+.flow{
+  display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:13px;color:var(--dim);margin-bottom:38px;
+}
+.flow b{font-weight:400;color:var(--fg);background:#ffffff0a;border:1px solid var(--line);border-radius:6px;padding:6px 12px}
+.flow i{color:var(--faint);font-style:normal}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{
+  display:inline-block;padding:10px 20px;border-radius:8px;text-decoration:none;
+  font-size:14px;font-weight:500;transition:.15s;
+}
+.btn-1{background:var(--fg);color:#09090b}
+.btn-1:hover{background:#fff}
+.btn-2{border:1px solid var(--line);color:var(--dim)}
+.btn-2:hover{border-color:#ffffff33;color:var(--fg)}
+
+/* ── 区块 ── */
+section{padding:64px 0;border-top:1px solid var(--line2)}
+h2{font-size:13px;font-family:var(--mono);color:var(--mute);font-weight:500;
+   text-transform:uppercase;letter-spacing:1.4px;margin:0 0 30px}
+h3{font-size:16px;margin:0 0 8px;font-weight:600}
+p{color:var(--dim);margin:0 0 14px}
+p:last-child{margin-bottom:0}
+
+/* ── 能力三栏 ── */
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{
+  background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:20px;
+  transition:border-color .18s,transform .18s;
+}
+.card:hover{border-color:var(--line);transform:translateY(-2px)}
+.card ul{list-style:none;padding:0;margin:12px 0 0;font-size:13.5px}
+.card li{padding:4px 0 4px 15px;color:var(--dim);position:relative}
+.card li::before{content:"";position:absolute;left:0;top:12px;width:5px;height:5px;border-radius:50%;background:#ffffff26}
+.tag{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:4px;letter-spacing:.3px}
+
+/* ── 时间树 ── */
+.tree{position:relative;padding-left:30px}
+.tree::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:1px;background:linear-gradient(#34d399,#a78bfa 40%,#ffffff14)}
+.node{position:relative;padding-bottom:30px}
+.node:last-child{padding-bottom:0}
+.node::before{
+  content:"";position:absolute;left:-26px;top:6px;width:11px;height:11px;border-radius:50%;
+  border:2px solid var(--bg);box-sizing:border-box;
+}
+.node.done::before{background:var(--emerald);box-shadow:0 0 0 3px #34d3991f}
+.node.next::before{background:var(--sky);box-shadow:0 0 0 3px #38bdf81f}
+.node.todo::before{background:#27272a;border-color:#3f3f46;box-shadow:none}
+.node-top{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;margin-bottom:5px}
+.st{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.5px}
+.node.done .st{color:var(--emerald)}
+.node.next .st{color:var(--sky)}
+.node h3{font-size:15.5px}
+.badge{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:999px;letter-spacing:.3px}
+.b-done{background:#34d3991f;color:#6ee7b7}
+.b-next{background:#38bdf81f;color:#7dd3fc}
+.b-todo{background:#ffffff0a;color:var(--faint)}
+.node p{font-size:14px;margin:6px 0 0}
+.meta{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:7px}
+
+/* ── 数据条 ── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;background:var(--line2);
+  border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.stat{background:var(--bg);padding:20px 16px;text-align:center}
+.stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.5px;font-family:var(--mono)}
+.stat span{font-size:12px;color:var(--mute)}
+
+/* ── 提交表 ── */
+.commits{border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.crow{display:grid;grid-template-columns:62px 84px 1fr;gap:12px;padding:10px 16px;
+  border-bottom:1px solid var(--line2);font-size:13.5px;align-items:baseline}
+.crow:last-child{border-bottom:none}
+.crow:hover{background:#ffffff05}
+.ch{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.cd{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.cm{font-family:var(--mono);font-size:12.5px;color:var(--dim);overflow-wrap:anywhere}
+
+/* ── 技术栈 ── */
+.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;
+  background:var(--line2);border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.sk{background:var(--bg);padding:15px 17px}
+.sk em{display:block;font-size:11.5px;color:var(--faint);font-style:normal;
+  font-family:var(--mono);margin-bottom:3px}
+.sk b{font-size:14px;font-weight:500}
+
+/* ── 页脚 ── */
+footer{padding:40px 0 56px;border-top:1px solid var(--line2);color:var(--faint);font-size:13px;
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer a{color:var(--mute);text-decoration:none}
+footer a:hover{color:var(--fg)}
+
+@media(max-width:640px){
+  .wrap{padding:0 18px}
+  .hero{padding:64px 0 52px}
+  .tree{padding-left:24px}
+  .node::before{left:-21px}
+  .crow{grid-template-columns:1fr;gap:3px}
+  /* 窄屏收紧间距，但四条都留着 —— 历程是主内容，不能藏 */
+  nav{gap:16px}
+  nav a{font-size:12.5px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav>
+      <div class="logo">Dev<span>Clip</span></div>
+      <a href="#ability">能力</a>
+      <a href="#road">历程</a>
+      <a href="#stack">技术栈</a>
+      <a href="#commits">提交</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <div class="kicker"><i class="dot"></i>阶段 3 / 11 · 开发中</div>
+    <h1>不只是存下来，<br>而是理解它</h1>
+    <p class="lead">
+      面向开发者的跨平台剪贴板。在剪贴板之上叠加一层<strong>开发者语义</strong>：
+      自动识别 JSON / JWT / SQL / Base64 / 异常栈等 13 种内容类型，
+      并针对每种类型提供可执行操作 —— 格式化、解码、解释。
+    </p>
+    <div class="flow">
+      <b>复制</b><i>→</i><b>自动保存</b><i>→</i><b>快捷键呼出</b><i>→</i><b>搜索</b><i>→</i><b>选择</b><i>→</i><b>粘贴</b>
+    </div>
+    <div class="cta">
+      <a class="btn btn-1" href="#road">查看成长历程</a>
+      <a class="btn btn-2" href="#stack">技术栈</a>
+    </div>
+  </div>
+
+  <section id="ability">
+    <h2>三层能力</h2>
+    <div class="grid3">
+      <div class="card">
+        <h3>Clipboard</h3>
+        <span class="tag" style="background:#38bdf81f;color:#7dd3fc">阶段 1–5</span>
+        <ul>
+          <li>History 历史记录</li>
+          <li>Search FTS5 全文检索</li>
+          <li>Favorite 收藏置顶</li>
+          <li>Tags 类型自动标注</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Toolbox</h3>
+        <span class="tag" style="background:#a78bfa1f;color:#c4b5fd">阶段 6</span>
+        <ul>
+          <li>JSON format / minify / sort</li>
+          <li>JWT decode header / payload</li>
+          <li>Base64 encode / decode</li>
+          <li>SQL format / 提表名</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>AI</h3>
+        <span class="tag" style="background:#fbbf241f;color:#fcd34d">P2 · 阶段 11</span>
+        <ul>
+          <li>Explain 解释异常栈</li>
+          <li>Translate 翻译</li>
+          <li>Summarize 总结</li>
+          <li>Fix SQL 优化建议</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="road">
+    <h2>成长历程</h2>
+    <div class="tree">
+
+      <div class="node done">
+        <div class="node-top">
+          <span class="st">2026-09-27</span>
+          <h3>阶段 0 · 环境与脚手架</h3>
+          <span class="badge b-done">已完成</span>
+        </div>
+        <p>Tauri 2 脚手架，React 19 + TypeScript 6 + Vite 8 + Tailwind v4，Rust 工具链与 webkit2gtk 就位。</p>
+        <div class="meta">5 commits · 从 0 到能起一个空窗口</div>
+      </div>
+
+      <div class="node done">
+        <div class="node-top">
+          <span class="st">2026-09-27</span>
+          <h3>阶段 1 · 调色板界面 + Mock 数据</h3>
+          <span class="badge b-done">已完成</span>
+        </div>
+        <p>
+          零 Rust 把交互全部调通。虚拟列表（148 条只渲染 6 行）、80ms 搜索防抖、
+          右键菜单、图片缩略图。
+          <br>过程中发现虚拟化与 cmdk 冲突：cmdk 靠 DOM 里的
+          <code>aria-selected</code> 定位当前项，窗口化后只看得到窗口内的项，
+          <code>Enter</code> 会静默失效。键盘导航因此改为自管。
+        </p>
+        <div class="meta">2 commits · 18 条 e2e 用例</div>
+      </div>
+
+      <div class="node done">
+        <div class="node-top">
+          <span class="st">2026-09-28</span>
+          <h3>阶段 2 · 打通 Tauri IPC</h3>
+          <span class="badge b-done">已完成</span>
+        </div>
+        <p>
+          新增 <code>tauri.ts</code>，11 个方法一一对应 Rust 侧 11 个
+          <code>#[tauri::command]</code>。前端一行未改，
+          通过 <code>VITE_BACKEND=tauri</code> 完成数据源切换。
+        </p>
+        <div class="meta">1 commit · 前后端契约首次对齐</div>
+      </div>
+
+      <div class="node done">
+        <div class="node-top">
+          <span class="st">2026-09-28</span>
+          <h3>阶段 3 · detect.rs 内容识别器</h3>
+          <span class="badge b-done">已完成</span>
+        </div>
+        <p>
+          第一个 Rust 文件。纯函数、无 async、无系统调用。
+          13 条规则按固定顺序判定，先匹配到的胜出。
+          67 条单元测试，86 条带标注真实内容准确率 <strong>100%</strong>。
+          <br>三个 bug 都是测试逼出来的：base64url 字母表误用标准 base64
+          的 <code>+ /</code>（实际应为 <code>- _</code>）导致含 <code>_</code> 的
+          JWT 签名被拒；DDL 规则用 <code>contains</code> 把散文吞成 SQL；
+          异常的包名前缀要求挡掉了 Python 的 <code>RuntimeError</code>。
+        </p>
+        <div class="meta">1 commit · 67 tests · clippy 0 警告</div>
+      </div>
+
+      <div class="node next">
+        <div class="node-top">
+          <span class="st">进行中</span>
+          <h3>阶段 4 · SQLite + 历史记录</h3>
+          <span class="badge b-next">下一个</span>
+        </div>
+        <p>
+          <code>db.rs</code> / <code>repo.rs</code> / <code>models.rs</code>，
+          FTS5 虚表与触发器，<code>upsert</code> 去重。
+          验收线是 1000 条数据下搜索响应 &lt; 50ms。
+        </p>
+        <div class="meta">已知踩坑：MATCH 查询串需转义 · 必须开 bundled feature</div>
+      </div>
+
+      <div class="node todo">
+        <div class="node-top">
+          <span class="st">分水岭</span>
+          <h3>阶段 5 · 监听 + 快捷键 + 粘贴</h3>
+          <span class="badge b-todo">真正可用</span>
+        </div>
+        <p>剪贴板监听、全局快捷键、模拟按键粘贴。做到这里就能每天用了。</p>
+      </div>
+
+      <div class="node todo">
+        <div class="node-top">
+          <span class="st">差异化</span>
+          <h3>阶段 6 · 开发者工具箱</h3>
+          <span class="badge b-todo">待开始</span>
+        </div>
+        <p>动作注册表，UI 从 <code>availableActions()</code> 动态渲染，不硬编码类型判断。</p>
+      </div>
+
+      <div class="node todo">
+        <div class="node-top">
+          <span class="st">护城河</span>
+          <h3>阶段 7 · 敏感信息 + 托盘 + 设置</h3>
+          <span class="badge b-todo">待开始</span>
+        </div>
+        <p>密钥识别与自动过期、托盘图标、保留期清理。</p>
+      </div>
+
+      <div class="node todo">
+        <div class="node-top">
+          <span class="st">平台</span>
+          <h3>阶段 8–10 · Linux / Windows / 发布</h3>
+          <span class="badge b-todo">待开始</span>
+        </div>
+        <p>X11 selection 监听与 XTEST、Win32 消息钩子、CI 矩阵与产物分发。</p>
+      </div>
+
+      <div class="node todo">
+        <div class="node-top">
+          <span class="st">P2</span>
+          <h3>阶段 11+ · AI</h3>
+          <span class="badge b-todo">待开始</span>
+        </div>
+        <p>解释、翻译、总结。先把 API key 存储和隐私提示想清楚 —— 剪贴板内容会全部发到远端。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>当前进度</h2>
+    <div class="stats">
+      <div class="stat"><b style="color:#34d399">4</b><span>已完成阶段</span></div>
+      <div class="stat"><b>11</b><span>规划阶段</span></div>
+      <div class="stat"><b>85</b><span>自动化测试</span></div>
+      <div class="stat"><b>100%</b><span>识别准确率</span></div>
+      <div class="stat"><b>13</b><span>内容类型</span></div>
+    </div>
+  </section>
+
+  <section id="commits">
+    <h2>提交记录</h2>
+    <div class="commits">
+      <div class="crow"><span class="ch">4e0aee8</span><span class="cd">09-27</span><span class="cm">chore: 初始化 DevClip 工程</span></div>
+      <div class="crow"><span class="ch">8948819</span><span class="cd">09-27</span><span class="cm">docs: 新增 AGENTS.md 并重写 README</span></div>
+      <div class="crow"><span class="ch">af22454</span><span class="cd">09-27</span><span class="cm">docs: AGENTS.md 只留耐久内容</span></div>
+      <div class="crow"><span class="ch">0dc574c</span><span class="cd">09-27</span><span class="cm">docs: 改用 OpenCode 两级 AGENTS.md 机制</span></div>
+      <div class="crow"><span class="ch">39b2fa5</span><span class="cd">09-27</span><span class="cm">chore: 停止追踪 .vscode/</span></div>
+      <div class="crow"><span class="ch">534eeea</span><span class="cd">09-27</span><span class="cm">feat: 补完阶段 1 的虚拟列表、防抖与右键菜单</span></div>
+      <div class="crow"><span class="ch">fbc207c</span><span class="cd">09-27</span><span class="cm">fix: 选中态色条错位并溢出到下一行</span></div>
+      <div class="crow"><span class="ch">9141237</span><span class="cd">09-27</span><span class="cm">chore: 引入 Playwright 端到端验收</span></div>
+      <div class="crow"><span class="ch">cc64440</span><span class="cd">09-28</span><span class="cm">feat: 阶段 2 接线，前端打通 Tauri IPC</span></div>
+      <div class="crow"><span class="ch">397562a</span><span class="cd">09-28</span><span class="cm">feat: 阶段 3 detect.rs，13 条内容识别规则</span></div>
+    </div>
+  </section>
+
+  <section id="stack">
+    <h2>技术栈</h2>
+    <div class="stack">
+      <div class="sk"><em>UI</em><b>React 19 + TypeScript 6</b></div>
+      <div class="sk"><em>构建</em><b>Vite 8</b></div>
+      <div class="sk"><em>桌面框架</em><b>Tauri 2</b></div>
+      <div class="sk"><em>系统层</em><b>Rust 1.98</b></div>
+      <div class="sk"><em>数据</em><b>SQLite + FTS5 trigram</b></div>
+      <div class="sk"><em>状态</em><b>Zustand</b></div>
+      <div class="sk"><em>样式</em><b>Tailwind v4 + cmdk</b></div>
+      <div class="sk"><em>验收</em><b>Playwright</b></div>
+    </div>
+  </section>
+
+  <footer>
+    <div>DevClip · 面向开发者的剪贴板 + 开发工具箱</div>
+    <div>macOS · Windows · Linux(X11) &nbsp;|&nbsp; <a href="#">GitHub</a></div>
+  </footer>
+
+</div>
+</body>
+</html>
