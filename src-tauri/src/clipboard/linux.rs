@@ -248,39 +248,56 @@ where
     Ok(running)
 }
 
-/// 当前前台应用的窗口名。
+/// 当前活动窗口的 X11 窗口 ID。
 ///
-/// 走 `_NET_ACTIVE_WINDOW` 再查 `_NET_WM_NAME`。与 macOS 的
-/// NSWorkspace 对应，但精度差些 —— 只拿得到窗口标题，拿不到 bundle id
-pub fn frontmost_app() -> Option<String> {
+/// 返回 ID 而不是窗口名，这是与 macOS 版对齐的关键：
+/// macOS 拿的是 bundle id（稳定、唯一），X11 上对应的东西就是
+/// 窗口 ID。早先这里返回窗口标题，然后靠标题找回窗口 ——
+/// 而标题会变、可能重复，调色板自己抢到焦点时记下的还是
+/// 「DevClip」，回去根本匹配不上
+pub fn frontmost_window() -> Option<Window> {
     let (c, screen) = connect()?;
-    let root = c.setup().roots[screen].root;
-    let active = intern(&c, "_NET_ACTIVE_WINDOW")?;
+    active_window(&c, c.setup().roots[screen].root)
+}
+
+/// 读 root 上的 `_NET_ACTIVE_WINDOW`。
+///
+/// 属性是 32 位卡片（format=32），x11rb 给的是**小端**字节。
+/// 写成 from_be_bytes 会得到 0x600e003 这样的错窗口号 ——
+/// 症状是 source_app 永远为空，而且不报错，很难查
+fn active_window(c: &RustConnection, root: Window) -> Option<Window> {
+    let active = intern(c, "_NET_ACTIVE_WINDOW")?;
     let window_atom: Atom = AtomEnum::WINDOW.into();
     let cookie = c
         .get_property(false, root, active, window_atom, 0, 1)
         .ok()?;
-    let reply = cookie.reply().ok()?;
-    if reply.value.len() < 4 {
-        return None;
-    }
-    // Window 就是 u32 的别名，属性值按网络字节序（大端）存
-    // 属性值是 32 位卡片（format=32），而 x11rb 给的是**小端**字节。
-    // 写成 from_be_bytes 会得到 0x600e003 这样的错窗口号 ——
-    // 症状是 source_app 永远为空，而且不报错，很难查
-    let b = reply.value.get(0..4)?;
-    let win: Window = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-    if win == 0 {
-        return None;
-    }
+    let value = cookie.reply().ok()?.value;
+    let b = value.get(0..4)?;
+    let win = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    (win != 0).then_some(win)
+}
 
-    let net_name = intern(&c, "_NET_WM_NAME")?;
-    let utf8 = intern(&c, "UTF8_STRING")?;
-    for atom in [net_name, intern(&c, "WM_NAME").unwrap_or(0)] {
-        if atom == 0 {
+/// 当前前台应用的窗口名。
+///
+/// 与 [frontmost_window] 配对使用：ID 用来精确定位回去，
+/// 名字只作为给人看的 `source_app`。macOS 那边返回的是
+/// bundle id，X11 上没有等价物，窗口名是能拿到的最接近的东西
+pub fn frontmost_app() -> Option<String> {
+    let (c, _) = connect()?;
+    let win = frontmost_window()?;
+    window_title(&c, win)
+}
+
+fn window_title(c: &RustConnection, win: Window) -> Option<String> {
+    let utf8 = intern(c, "UTF8_STRING")?;
+    for name_atom in [
+        intern(c, "_NET_WM_NAME")?,
+        intern(c, "WM_NAME").unwrap_or(0),
+    ] {
+        if name_atom == 0 {
             continue;
         }
-        let Ok(cookie) = c.get_property(false, win, atom, utf8, 0, 256) else {
+        let Ok(cookie) = c.get_property(false, win, name_atom, utf8, 0, 256) else {
             continue;
         };
         let Ok(r) = cookie.reply() else { continue };
@@ -300,65 +317,49 @@ pub fn frontmost_app() -> Option<String> {
     None
 }
 
+/// 把指定窗口拉到前台。
+///
+/// 走 ICCCM 的 `_NET_ACTIVE_WINDOW` 客户端消息，这是窗口管理器
+/// 认可的方式；单发 `XRaiseWindow` 在多数 WM 下会被忽略。
+///
+/// `data[0] = 2` 是「由用户操作发起」的源码指示，不带它的话
+/// 不少 WM 会当成程序自顾自的请求而直接忽略
+pub fn activate_window(win: Window) -> Result<(), String> {
+    let (c, screen) = connect().ok_or_else(|| "连不上 X 服务器".to_string())?;
+    let root = c.setup().roots[screen].root;
+
+    // 窗口可能已经关了（用户复制完就关了那个标签页）
+    let reply = c
+        .get_window_attributes(win)
+        .map_err(|e| format!("目标窗口已失效（0x{win:x}）：{e}"))?
+        .reply()
+        .map_err(|e| format!("目标窗口已失效（0x{win:x}）：{e}"))?;
+    if reply.map_state != x11rb::protocol::xproto::MapState::VIEWABLE {
+        return Err(format!("目标窗口已不可见（0x{win:x}）"));
+    }
+
+    let active_atom = intern(&c, "_NET_ACTIVE_WINDOW").ok_or("拿不到 _NET_ACTIVE_WINDOW 原子")?;
+    let data = ClientMessageData::from([2, CurrentTime, 0, 0, 0]);
+    let ev = ClientMessageEvent::new(32, root, active_atom, data);
+    c.send_event(
+        false,
+        root,
+        EventMask::SUBSTRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE,
+        ev,
+    )
+    .map_err(|e| format!("发送激活事件失败: {e}"))?
+    .check()
+    .map_err(|e| format!("发送激活事件失败: {e}"))?;
+    c.flush().map_err(|e| format!("发送激活事件失败: {e}"))?;
+    Ok(())
+}
+
 fn intern(c: &RustConnection, name: &str) -> Option<Atom> {
     c.intern_atom(false, name.as_bytes())
         .ok()?
         .reply()
         .ok()
         .map(|r| r.atom)
-}
-
-/// 把标题匹配的窗口拉到前台。
-///
-/// X11 没有 macOS 那种「按 bundle id 唤起」的东西，只能遍历窗口
-/// 树找 `_NET_WM_NAME` 匹配的。**这是尽力而为**：用户改过窗口标题
-/// 就对不上。所以 `paste` 不把它当必经步骤 —— 对不上时内容已经
-/// 写进剪贴板了，用户按 Ctrl+Shift+V 就能粘
-pub fn raise_window_by_title(title: &str) -> Result<(), String> {
-    let (c, screen) = connect().ok_or_else(|| "连不上 X 服务器".to_string())?;
-    let root = c.setup().roots[screen].root;
-    let net_name = intern(&c, "_NET_WM_NAME").ok_or("拿不到 _NET_WM_NAME 原子")?;
-    let utf8 = intern(&c, "UTF8_STRING").ok_or("拿不到 UTF8_STRING 原子")?;
-
-    // 只看 root 的直接子窗口，不递归。调色板窗口和普通应用窗口
-    // 都是 root 的直接子窗口，递归反而会把一堆无关窗口带进来
-    let cookie = c
-        .query_tree(root)
-        .map_err(|e| format!("遍历窗口失败: {e}"))?
-        .reply()
-        .map_err(|e| format!("遍历窗口失败: {e}"))?;
-
-    for win in cookie.children {
-        let Ok(cookie) = c.get_property(false, win, net_name, utf8, 0, 256) else {
-            continue;
-        };
-        let Ok(r) = cookie.reply() else { continue };
-        let name = String::from_utf8_lossy(&r.value)
-            .trim_matches('\0')
-            .to_string();
-        if name != title {
-            continue;
-        }
-        // XRaiseWindow 在多数 WM 下会被忽略 —— 还要走 _NET_ACTIVE_WINDOW
-        // 的 ClientMessage 走 ICCCM 流程，那是 WM 认可的方式
-        // ICCCM 的 _NET_ACTIVE_WINDOW 客户端消息：
-        // data[0]=2 表示「由用户操作发起」，这样窗口管理器才会接受，
-        // 不带这个标记的话很多 WM 会当成程序自顾自的请求而忽略
-        let active_atom = intern(&c, "_NET_ACTIVE_WINDOW").unwrap_or(0);
-        let data = ClientMessageData::from([2, CurrentTime, 0, 0, 0]);
-        let ev = ClientMessageEvent::new(32, root, active_atom, data);
-        c.send_event(
-            false,
-            root,
-            EventMask::SUBSTRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE,
-            ev,
-        )
-        .map_err(|e| format!("发送激活事件失败: {e}"))?
-        .check()
-        .map_err(|e| format!("发送激活事件失败: {e}"))?;
-        return Ok(());
-    }
-    Err(format!("没找到标题为「{title}」的窗口"))
 }
 
 // ── 模拟粘贴（XTEST）─────────────────────────────────────────────────

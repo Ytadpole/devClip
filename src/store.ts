@@ -22,7 +22,12 @@ const clamp = (n: number, len: number) => (len === 0 ? 0 : Math.max(0, Math.min(
 
 interface Status {
   text: string;
-  kind: "ok" | "err";
+  /**
+   * `warn` 是「没完全成功但不至于失败」：模拟粘贴被拒后
+   * 内容已在剪贴板、让用户手动按一下就好。跟 `err` 分开是因为
+   * 两者的紧急程度不同，用户不该把降级当故障
+   */
+  kind: "ok" | "warn" | "err";
 }
 
 /** 右键菜单的挂载点。用视口坐标，菜单本体 fixed 定位。 */
@@ -137,7 +142,12 @@ export const useStore = create<State>((set, get) => ({
     // 后端抓到新内容会推 clipboard://changed。订阅一次就够 ——
     // init 只在挂载时调一次，React 严格模式下的重复调用也拿不到新结果，
     // 多订阅只会让同一条内容刷两遍
-    api.subscribe(() => void useStore.getState().refresh());
+    api.subscribe(
+      () => void useStore.getState().refresh(),
+      // 降级提示直接显示在状态栏。降级不是错误 —— 内容确实复制
+      // 成功了，只是没自动粘上，所以用 warn 语气而不是 err
+      (text) => useStore.getState().say(text, "warn"),
+    );
     try {
       await get().refresh();
     } finally {

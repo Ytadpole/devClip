@@ -201,7 +201,15 @@ export function Palette() {
           {/* 底部：状态 / 快捷键提示 */}
           <div className="flex items-center gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-zinc-600">
             {s.status ? (
-              <span className={s.status.kind === "err" ? "text-amber-400" : "text-emerald-400"}>
+              <span
+                className={
+                  s.status.kind === "ok"
+                    ? "text-emerald-400"
+                    : // warn 与 err 同色但语义不同：降级不是故障，
+                      // 统一用琥珀色表示「没按预期走」，不制造恐慌
+                      "text-amber-400"
+                }
+              >
                 {s.status.text}
               </span>
             ) : (

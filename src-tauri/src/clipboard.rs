@@ -186,11 +186,19 @@ pub fn activate(bundle_id: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn activate(name: &str) -> Result<(), String> {
+pub fn activate(target: &str) -> Result<(), String> {
     #[cfg(all(unix, not(target_os = "macos")))]
-    return linux::raise_window_by_title(name).map_err(|e| format!("唤起窗口失败：{e}"));
+    {
+        // 传进来的是十六进制窗口 ID（0x…）。早先这里传窗口名，
+        // 靠标题匹配找回窗口 —— 标题会变、可能重复，粘贴经常落空
+        let id = u32::from_str_radix(target.trim_start_matches("0x"), 16)
+            .map_err(|_| format!("目标窗口标识无法解析：{target}"))?;
+        linux::activate_window(id)
+    }
     #[cfg(target_os = "windows")]
-    Err(format!("当前平台尚未实现唤起目标应用（{name}）"))
+    {
+        Err(format!("当前平台尚未实现唤起目标应用（{target}）"))
+    }
 }
 
 /// 跑一段 osascript，带硬超时。
@@ -320,7 +328,9 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
 fn capture(app: &tauri::AppHandle, text: &str) -> Option<repo::ClipboardItem> {
     // 取前台应用必须在锁外。系统调用一旦变慢（权限弹窗、进程起不来），
     // 就会把整把数据库锁一起拖住，界面和别的命令全卡死
-    let source_app = frontmost_app();
+    // 前台应用是自己就记 null。调色板显示时 DevClip 是前台窗口，
+    // 记下来会让每条历史都写着「DevClip」，一个有用的字段就废了
+    let source_app = frontmost_app().filter(|a| a != &app.config().identifier.to_string());
     let state = app.state::<crate::Db>();
     let conn = lock(&state.conn);
     let (id, created) = repo::upsert(
@@ -340,6 +350,16 @@ fn capture(app: &tauri::AppHandle, text: &str) -> Option<repo::ClipboardItem> {
     }
     repo::get(&conn, id).ok().flatten()
 }
+
+/// 手动粘贴该按哪个键。两个平台的约定不一样：macOS 是 ⌘V，
+/// Linux 桌面环境普遍是 Ctrl+Shift+V —— 单按 ^V 在 GNOME Terminal
+/// 里是「显示光标位置」而不是粘贴，Windows 上则会和很多软件的
+/// 快捷键打架
+pub const PASTE_KEY_HINT: &str = if cfg!(target_os = "macos") {
+    "⌘V"
+} else {
+    "Ctrl+Shift+V"
+};
 
 // ── Linux ───────────────────────────────────────────────────────────
 

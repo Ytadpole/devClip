@@ -63,24 +63,35 @@ export const tauriApi: ClipboardApi = {
     return invoke("set_settings", { patch });
   },
 
-  subscribe(onChanged: () => void): () => void {
+  subscribe(onChanged: () => void, onNotice?: (text: string) => void): () => void {
     // listen 是异步的，而取消订阅必须能同步调用 —— 调用方拿到的
     // 就是一个普通函数。所以先把 unlisten 挂起来，等它 resolve 之后
     // 再决定是真取消还是立刻补取消（订阅过程中就被取消的情况）
-    let unlisten: UnlistenFn | null = null;
+    const unlisteners: UnlistenFn[] = [];
     let cancelled = false;
-    void listen("clipboard://changed", () => onChanged())
-      .then((fn) => {
+    const add = (p: Promise<UnlistenFn>) =>
+      p.then((fn) => {
         if (cancelled) fn();
-        else unlisten = fn;
+        else unlisteners.push(fn);
       })
       .catch(() => {
         // 浏览器里没有 Tauri 的事件通道。e2e 跑的就是这个环境，
         // 静默退化成「永不触发」即可，不该在控制台留红
       });
+
+    add(listen("clipboard://changed", () => onChanged()));
+    // 降级提示。模拟粘贴失败时后端会发这条 —— 内容已经在剪贴板里，
+    // 但用户不知道「为什么没粘上」，所以这条必须能显示出来
+    if (onNotice) {
+      add(
+        listen<{ text: string }>("clipboard://notice", (e) =>
+          onNotice(e.payload.text),
+        ),
+      );
+    }
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlisteners.forEach((fn) => fn());
     };
   },
 };

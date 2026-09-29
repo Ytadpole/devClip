@@ -14,12 +14,15 @@
       {
         "label": "main",
         "title": "DevClip",
-        "width": 800,
-        "height": 600,
+        "width": 680,
+        "height": 480,
         "visible": false,
         "center": true,
+        "decorations": false,
+        "resizable": false,
         "alwaysOnTop": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "focus": true
       }
     ],
     "security": {

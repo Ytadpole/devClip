@@ -261,7 +261,31 @@ async fn paste(
         // 目标应用激活是异步的，图标弹回动画期间发键会被丢掉
         std::thread::sleep(std::time::Duration::from_millis(120));
     }
-    clipboard::send_paste_keystroke()
+    // 降级路径（docs/05 风险 2）：模拟按键失败时**不能让功能死掉**。
+    // 内容已经写进剪贴板了，所以至少还能让用户手动按一下 ——
+    // 一个「偶尔要手动按 ^V」的版本，远好过一个「粘贴按钮点不动」的版本
+    match clipboard::send_paste_keystroke() {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // 窗口已经藏了、目标也激活了，不弹回来就没有任何提示，
+            // 用户只会看到「点了没反应」
+            show_palette(&app);
+            // emit 而不是直接改 store：命令层拿不到 store，
+            // 而前端已经在监听这个事件（api.ts 的 subscribe 同一条通道）
+            let _ = tauri::Emitter::emit(
+                &app,
+                "clipboard://notice",
+                serde_json::json!({
+                    "text": format!(
+                        "已复制到剪贴板，请手动按 {} 粘贴",
+                        clipboard::PASTE_KEY_HINT
+                    ),
+                    "reason": e,
+                }),
+            );
+            Ok(())
+        }
+    }
 }
 
 #[tauri::command]
@@ -346,12 +370,49 @@ fn toggle_palette(app: &tauri::AppHandle) {
         let _ = w.hide();
         return;
     }
-    if let Some(bundle) = clipboard::frontmost_app() {
-        if bundle != app.config().identifier {
-            *unpoison(&app.state::<RestoreTarget>().0) = Some(bundle);
+    // 必须在 show_palette 之前取：调色板一旦显示就会抢到焦点，
+    // 那时再问前台窗口，问到的已经是 DevClip 自己
+    if let Some(target) = frontmost_target() {
+        if !is_own_window(app, &target) {
+            *unpoison(&app.state::<RestoreTarget>().0) = Some(target);
         }
     }
     show_palette(app);
+}
+
+/// 粘贴前记下前台窗口，粘贴后要回到那里。
+///
+/// 存的是**窗口 ID**（X11）或 **bundle id**（macOS），不是显示用的
+/// 名字。名字会变、可能重复，靠它匹配回去经常落空
+pub fn frontmost_target() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        clipboard::frontmost_app()
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        clipboard::linux::frontmost_window().map(|w| format!("{w:#x}"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        None
+    }
+}
+
+/// 这是不是 DevClip 自己的窗口。
+///
+/// 调色板呼出时会抢到焦点，而 X11 上 `XSetInputFocus` 之后
+/// `_NET_ACTIVE_WINDOW` 指向的就是我们自己。不排除的话会出现
+/// 两个后果：`source_app` 记成「DevClip」，以及粘贴时试图
+/// 唤起 DevClip 自己，⌘V/^V 全打在调色板上
+fn is_own_window(app: &tauri::AppHandle, target: &str) -> bool {
+    let Some(w) = app.get_webview_window("main") else {
+        return false;
+    };
+    let own: String = w.title().unwrap_or_default().to_string();
+    // 窗口标题是判断依据之一，但平台各异；真正稳的是配置里的
+    // identifier —— 两个都查，任一命中就算自己
+    own == target || target == app.config().identifier
 }
 
 /// 告诉前端「这台机器不能监听」，界面据此显示原因而不是
@@ -403,6 +464,52 @@ fn register_hotkey(app: &tauri::AppHandle) {
         eprintln!("快捷键 {spec} 注册失败（{e}），窗口改为常驻显示");
         show_palette(app);
     }
+}
+
+/// 建托盘图标。
+///
+/// X11 上这是**可用性前提**，不是装饰。X11 剪贴板是借用机制
+/// （docs/05 风险 4）：内容存在持有者进程里，进程一退就没了。
+/// 所以 DevClip 必须常驻，而「怎么常驻」只能靠托盘 —— 没有它
+/// 用户唯一能做的就是杀进程，那恰好是最容易丢数据的操作。
+///
+/// macOS 上同理：应用跑在 dock 里，但托盘能给一个明确的退出入口
+fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let show = MenuItem::with_id(app, "show", "显示调色板", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出 DevClip", true, None::<&str>)?;
+    // 菜单里明说退出意味着什么。X11 上用户不知道「退出 = 剪贴板
+    // 里没被存下的东西会丢」，而这正是最该说清的一句
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+
+    let mut builder = TrayIconBuilder::with_id("devclip")
+        .menu(&menu)
+        .tooltip("DevClip — 剪贴板历史")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_palette(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        // 左键直接开调色板，比「右键才出菜单」少一次点击
+        .on_tray_icon_event(|tray, event| {
+            use tauri::tray::TrayIconEvent;
+            if let TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_palette(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
 }
 
 /// 改快捷键。返回规范化后的值。
@@ -490,6 +597,9 @@ pub fn run() {
             clipboard::spawn_watcher(app.handle().clone(), sw);
 
             register_hotkey(app.handle());
+            build_tray(app.handle()).unwrap_or_else(|e| {
+                eprintln!("托盘图标创建失败：{e}");
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
