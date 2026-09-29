@@ -12,6 +12,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
+/// Linux 实现。与本文件里的 macOS 路径完全独立 ——
+/// 两者机制不同（Selection vs changeCount），硬合在一起只会互相拖累
+#[cfg(all(unix, not(target_os = "macos")))]
+pub mod linux;
+
 use crate::repo;
 
 /// 轮询间隔。再密就是白烧 CPU，每次过一遍 NSPasteboard 不便宜
@@ -143,6 +148,9 @@ pub fn frontmost_app() -> Option<String> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn frontmost_app() -> Option<String> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return linux::frontmost_app();
+    #[cfg(target_os = "windows")]
     None
 }
 
@@ -178,8 +186,11 @@ pub fn activate(bundle_id: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn activate(_bundle_id: &str) -> Result<(), String> {
-    Err("当前平台尚未实现唤起目标应用".into())
+pub fn activate(name: &str) -> Result<(), String> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return linux::raise_window_by_title(name).map_err(|e| format!("唤起窗口失败：{e}"));
+    #[cfg(target_os = "windows")]
+    Err(format!("当前平台尚未实现唤起目标应用（{name}）"))
 }
 
 /// 跑一段 osascript，带硬超时。
@@ -241,12 +252,27 @@ pub fn send_paste_keystroke() -> Result<(), String> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn send_paste_keystroke() -> Result<(), String> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return linux::send_paste_keystroke();
+    #[cfg(target_os = "windows")]
     Err("当前平台尚未实现模拟按键".into())
 }
 
-/// 起监听线程。线程 panic 不影响主流程，但那样就再也收不到新内容了，
+/// 起监听线程。平台在这里分派。
+///
+/// 线程 panic 不影响主流程，但那样就再也收不到新内容了，
 /// 所以这里只对「起不来」报错
 pub fn spawn_watcher(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return spawn_linux(app, self_write);
+
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    spawn_macos(app, self_write)
+}
+
+/// macOS 的监听循环：`changeCount` 轮询
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
     std::thread::Builder::new()
         .name("devclip-clipboard".into())
         .spawn(move || {
@@ -313,6 +339,41 @@ fn capture(app: &tauri::AppHandle, text: &str) -> Option<repo::ClipboardItem> {
         let _ = repo::prune(&conn, MAX_ITEMS, Some(RETENTION_DAYS * 86_400_000));
     }
     repo::get(&conn, id).ok().flatten()
+}
+
+// ── Linux ───────────────────────────────────────────────────────────
+
+/// Linux 的监听：轮询 CLIPBOARD 持有者，变化了就读、入库、并接管。
+///
+/// 接管不是可选的 —— X11 剪贴板是借用机制（docs/05 风险 4），
+/// 源程序一退出内容就没了。剪贴板管理器必须自己变成持有者，
+/// 这也是它必须常驻托盘的原因
+#[cfg(all(unix, not(target_os = "macos")))]
+fn spawn_linux(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
+    if let Some(why) = linux::monitor_blocker() {
+        // 明确告诉用户为什么，不能静默不工作
+        eprintln!("剪贴板监听未启用：{why}");
+        crate::emit_monitor_unavailable(&app, why);
+        return;
+    }
+
+    let handle = app.clone();
+    let sw = Arc::clone(&self_write);
+    let res = linux::spawn_watcher(move |text: String| {
+        // 回环判断要在入库之前。Linux 上这一步比 macOS 更要紧：
+        // 接管线程把自己写的内容又读回来是常态，
+        // 判断错位置就会每次接管都多一条历史
+        if sw.take(&text) {
+            return;
+        }
+        if let Some(item) = capture(&handle, &text) {
+            let _ = tauri::Emitter::emit(&handle, "clipboard://changed", item);
+        }
+    });
+
+    if let Err(e) = res {
+        eprintln!("起剪贴板监听线程失败: {e}");
+    }
 }
 
 #[cfg(test)]

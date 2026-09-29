@@ -354,6 +354,16 @@ fn toggle_palette(app: &tauri::AppHandle) {
     show_palette(app);
 }
 
+/// 告诉前端「这台机器不能监听」，界面据此显示原因而不是
+/// 假装在正常工作
+pub(crate) fn emit_monitor_unavailable(app: &tauri::AppHandle, reason: String) {
+    let _ = tauri::Emitter::emit(
+        app,
+        "clipboard://unavailable",
+        serde_json::json!({ "reason": reason }),
+    );
+}
+
 /// 设置文件位置，与数据库同目录
 fn settings_path(app: &tauri::AppHandle) -> std::path::PathBuf {
     let dir = app

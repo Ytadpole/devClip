@@ -30,6 +30,9 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 # 去重用，比 sha2 快且无额外依赖
 blake3 = "1"
 arboard = "3.6.1"
+# X11 协议。arboard 只做读写，不提供「剪贴板什么时候变了」，
+# 而监听恰恰是剪贴板管理器的核心 —— 只能自己查 owner
+x11rb = { version = "0.13", features = ["xtest"] }
 tauri-plugin-global-shortcut = "2.4.0"
 
 # 只在 macOS 上要：读前台应用、拉起目标应用。

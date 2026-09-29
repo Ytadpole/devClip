@@ -810,6 +810,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
  "url",
+ "x11rb",
 ]
 
 [[package]]
