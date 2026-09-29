@@ -68,8 +68,11 @@ Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 - **端口 1420 且 `strictPort: true`** —— 被占用会直接失败。不要改端口，`tauri.conf.json` 的 `devUrl` 依赖这个值
 - **Tailwind v4 没有 `tailwind.config.js`** —— 主题配在 `src/index.css` 的 `@theme` 里
 - **`src/lib/mock.ts` 是内存态** —— 刷新即重置。新功能要造数据就往这里加
-- **`docs/` 不在版本库中** —— 设计文档是 gitignored 的本地文件，不要假设 clone 后能看到
-- 无 CI、无 pre-commit hook
+- **`docs/` 在版本库中** —— 6 份设计文档 + `DEVLOG.md` 都已入库。
+  设计有变更时连同文档一起改，别让代码走在文档前面
+- 有 CI（`.github/workflows/ci.yml`），无 pre-commit hook。CI 跑三平台
+  矩阵 + macOS 真机检查；**没有 Linux 上的 macOS 交叉检查**，
+  那条路走不通（见 ci.yml 里的说明）
 
 ## 提交信息
 
@@ -78,8 +81,15 @@ Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 - 标题 ≤ 50 列，`<type>: <祈使句摘要>`，一句话说完
 - **默认只写标题**；确有必要时正文不超过 5 行，纯文本段落折行 ≤ 72 列
 - **复杂的「为什么」写进 `docs/DEVLOG.md`**，那条记录与 GitHub 上的
-  commit **一一对应**，以 commit hash 为键。该文件在 gitignore 内，
-  不会进版本库
+  commit **一一对应**，以 commit hash 为键。该文件已入库，所以
+  「一一对应」变成了对读者的承诺，不只是自己的备忘
+- 追加 DEVLOG 条目时顺序必须与 `git log --reverse` 一致。提交后校验：
+
+  ```bash
+  grep -oE '^## [0-9a-f]{7}' docs/DEVLOG.md | awk '{print $2}' > /tmp/dl.txt
+  git log --format='%h' --reverse > /tmp/gl.txt
+  diff /tmp/dl.txt /tmp/gl.txt
+  ```
 - 一次提交一个主题；超过 50 行的改动就拆成多次提交
 
 类型前缀：`feat` `fix` `chore` `refactor` `docs` `perf`

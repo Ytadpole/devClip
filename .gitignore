@@ -7,9 +7,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# 设计文档暂不入版本库
-docs/*
-
 # Playwright
 /test-results/
 /playwright-report/
