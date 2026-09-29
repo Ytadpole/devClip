@@ -18,6 +18,7 @@ pub mod clipboard;
 pub mod db;
 mod detect;
 pub mod repo;
+mod sensitive;
 
 use clipboard::SelfWrite;
 use db::DbError;

@@ -9,7 +9,7 @@
 
 use arboard::Clipboard;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 use crate::repo;
@@ -69,6 +69,59 @@ impl SelfWrite {
             return true;
         }
         false
+    }
+}
+
+/// 记住「上一次看到的内容」，用来挡重复。
+///
+/// ## 为什么不能只比内容
+///
+/// 早先这里只是个 `Option<String>`，条件是 `text == last`。
+/// 看起来能挡住「按住 Ctrl+C 不放」刷屏，但 `last` 只在剪贴板
+/// 被清空时才重置 —— 于是「连续两次复制同一段内容」时第二次
+/// 会被误判成重复，`copy_count` 永远停在 1。而「从历史里复制
+/// 一条命令、改一改、再复制一次」恰恰是常见操作。
+///
+/// 所以要带时刻：**内容相同且时间在窗口内**才算重复。
+#[derive(Default)]
+pub struct Seen(Mutex<Option<(String, Instant)>>);
+
+/// 重复判定窗口。
+///
+/// 必须大于 [POLL] 才挡得住「按住 Ctrl+C 不放」—— 那样每隔
+/// 一个轮询周期就会看到一次内容没变。取得比轮询稍宽是为了
+/// 留出抖动余量
+const DEDUPE_WINDOW: Duration = Duration::from_millis(800);
+
+impl Seen {
+    /// 这段内容是刚见过的重复吗
+    ///
+    /// 判为重复时**也要更新时间** —— 这是「静默期去抖」而不是
+    /// 「距上次入库」：按住 Ctrl+C 不放时每轮都观察一次，
+    /// 每次都把窗口往后推，于是一次都不会重复入库。
+    ///
+    /// 早先只在内容变化时更新，结果最快也是每 DEDUPE_WINDOW 记一次
+    /// （按住 10 秒把 copy_count 刷到 11）。那仍然是个 bug，
+    /// 只是不那么刺眼
+    pub fn is_repeat(&self, text: &str, now: Instant) -> bool {
+        let mut g = lock(&self.0);
+        let repeat = match g.as_ref() {
+            Some((prev, at)) if prev == text => now.duration_since(*at) < DEDUPE_WINDOW,
+            _ => false,
+        };
+        *g = Some((text.to_string(), now));
+        repeat
+    }
+
+    /// 直接记为已见过，不做重复判定。启动时用来建立基准
+    pub fn mark_as_seen(&self, text: &str) {
+        *lock(&self.0) = Some((text.to_string(), Instant::now()));
+    }
+
+    /// 剪贴板被清空或换成了图片。丢掉记录，
+    /// 这样下一次放回同样的文本会被当成新内容
+    pub fn clear(&self) {
+        *lock(&self.0) = None;
     }
 }
 
@@ -200,24 +253,33 @@ pub fn spawn_watcher(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
             // 先把启动那一刻剪贴板里的东西记成「已见过」：
             // 应用没运行期间复制的东西不该被追溯入库，
             // 密码管理器塞进去的东西也不该在启动瞬间被存下来
-            let mut last = read_text();
+            let seen = Seen::default();
+            if let Some(t) = read_text() {
+                seen.mark_as_seen(&t);
+            }
             loop {
                 std::thread::sleep(POLL);
                 let Some(text) = read_text() else {
-                    // 剪贴板被清空或换成了图片。丢掉 last，
-                    // 这样下一次放回同样的文本会被当成新内容
-                    last = None;
+                    seen.clear();
                     continue;
                 };
-                if Some(&text) == last.as_ref() {
+                if seen.is_repeat(&text, Instant::now()) {
                     continue;
                 }
-                let ours = self_write.take(&text);
-                last = Some(text.clone());
-                if ours {
+                if self_write.take(&text) {
                     continue;
                 }
                 if text.trim().is_empty() || text.len() > MAX_BYTES {
+                    continue;
+                }
+                // 敏感内容不入库。
+                //
+                // 位置很要紧：必须在 capture 之前。入完库再判等于没判 ——
+                // 密钥已经落到磁盘上了，删掉也说不清它存在过多久。
+                // 也不 emit：前端收到事件会刷新列表，而列表里并没有
+                // 新东西，刷新一次只是白闪一下
+                if let Some(why) = crate::sensitive::scan(&text) {
+                    eprintln!("剪贴板内容疑似敏感（{why}），已跳过入库");
                     continue;
                 }
                 if let Some(item) = capture(&app, &text) {
@@ -275,6 +337,88 @@ mod tests {
         assert!(!sw.take("world"));
         // 属于我们的那条仍然有效
         assert!(sw.take("hello"));
+    }
+
+    /// 防回归：早先只比内容，导致「连续两次复制同一段」时
+    /// 第二次被当成重复，copy_count 永远停在 1。
+    /// 而「从历史复制一条命令、改一改、再复制一次」是常见操作
+    #[test]
+    fn recopying_the_same_text_later_is_not_a_repeat() {
+        let s = Seen::default();
+        let t0 = Instant::now();
+        assert!(!s.is_repeat("foo", t0), "第一次不该算重复");
+        // 过了一分钟再复制同样内容 —— 是真实的第二次复制
+        let later = t0 + Duration::from_secs(60);
+        assert!(!s.is_repeat("foo", later), "隔了一分钟该算新的一次复制");
+    }
+
+    /// 按住 Ctrl+C 不放：每隔一个轮询周期就看到一次内容没变。
+    /// 挡不住的话 copy_count 会被刷到几十
+    #[test]
+    fn held_down_key_does_not_inflate_count() {
+        let s = Seen::default();
+        let t0 = Instant::now();
+        assert!(!s.is_repeat("x", t0));
+        for n in 1..=20 {
+            let at = t0 + Duration::from_millis(POLL.as_millis() as u64 * n);
+            assert!(
+                s.is_repeat("x", at),
+                "第 {n} 轮（+{}ms）不该被当成新内容",
+                POLL.as_millis() * n as u128
+            );
+        }
+    }
+
+    /// 静默期去抖下，判定是相对于**上一次观察**，不是上一次入库。
+    /// 用户安静了超过一个窗口后再复制，该算新的一次
+    #[test]
+    fn quiet_period_expires_and_allows_recount() {
+        let s = Seen::default();
+        let t0 = Instant::now();
+        assert!(!s.is_repeat("x", t0));
+
+        // 连续观察，每次都推进窗口，于是一直被判重复
+        let mut at = t0;
+        for _ in 0..10 {
+            at += Duration::from_millis(400);
+            assert!(s.is_repeat("x", at), "连着观察不该算新内容");
+        }
+
+        // 安静够久之后再看，这次是真实的复制
+        assert!(
+            !s.is_repeat("x", at + DEDUPE_WINDOW),
+            "静默超过一个窗口后该重新计入"
+        );
+    }
+
+    /// 窗口必须宽于轮询间隔，否则按住不放会漏过去
+    #[test]
+    fn dedupe_window_exceeds_poll_interval() {
+        assert!(
+            DEDUPE_WINDOW > POLL,
+            "去重窗口 {DEDUPE_WINDOW:?} 必须宽于轮询间隔 {POLL:?}"
+        );
+    }
+
+    /// 换内容时立刻生效，不受上一条的时间影响
+    #[test]
+    fn different_text_is_never_a_repeat() {
+        let s = Seen::default();
+        let t0 = Instant::now();
+        assert!(!s.is_repeat("a", t0));
+        assert!(!s.is_repeat("b", t0));
+        assert!(!s.is_repeat("c", t0));
+    }
+
+    /// 剪贴板被清空后，放回同样的文本算新内容
+    #[test]
+    fn clear_makes_the_same_text_new_again() {
+        let s = Seen::default();
+        let t0 = Instant::now();
+        assert!(!s.is_repeat("a", t0));
+        assert!(s.is_repeat("a", t0 + Duration::from_millis(10)));
+        s.clear();
+        assert!(!s.is_repeat("a", t0 + Duration::from_millis(20)));
     }
 
     #[test]
