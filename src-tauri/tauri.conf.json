@@ -12,9 +12,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "DevClip",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {

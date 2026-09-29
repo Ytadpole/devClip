@@ -29,6 +29,13 @@ base64 = "0.22"
 rusqlite = { version = "0.37", features = ["bundled"] }
 # 去重用，比 sha2 快且无额外依赖
 blake3 = "1"
+arboard = "3.6.1"
+tauri-plugin-global-shortcut = "2.4.0"
+
+# 只在 macOS 上要：读前台应用、拉起目标应用。
+# 走 NSWorkspace 进程内调用，不起 osascript —— 详见 clipboard.rs
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -4,23 +4,41 @@
  * 与 src/lib/api.ts 的 ClipboardApi 一一对应。
  *
  * 分层：
- * - db.rs   连接、PRAGMA、schema、FTS5 虚表与触发器
- * - repo.rs 全部 SQL（upsert 去重、query 过滤、增删改）
- * - 本文件   只做「取连接 → 调 repo → 返回」，不写 SQL
+ * - db.rs       连接、PRAGMA、schema、FTS5 虚表与触发器
+ * - repo.rs     全部 SQL（upsert 去重、query 过滤、增删改）
+ * - clipboard.rs 系统剪贴板读写、轮询监听、macOS 前台应用
+ * - 本文件      只做「取连接 → 调 repo → 返回」，不写 SQL
  *
  * 字段名约定：serde rename_all = "camelCase"，
  * 与前端 api.ts 的 camelCase 字段对齐。
  */
 // db / repo 设为 pub 是给 examples/seed.rs 用的：
 // 它要直接调 upsert 灌数据，绕不过这层
+pub mod clipboard;
 pub mod db;
 mod detect;
 pub mod repo;
 
+use clipboard::SelfWrite;
 use db::DbError;
 use repo::{ClipboardItem, Query};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+/// 调色板弹出前的前台应用，粘贴时要回到那里。
+///
+/// 不能用 item.source_app —— 那是内容当初被复制时的来源。
+/// 用户多半是在编辑器里按快捷键，却要粘上周在终端里复制的 JSON，
+/// 回到来源应用去就错了
+#[derive(Default)]
+pub struct RestoreTarget(Mutex<Option<String>>);
+
+/// 锁中毒按「报告但别崩」处理，与 Db 里的 conn 一致
+fn unpoison<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// 注入给所有命令的数据库连接。
 ///
@@ -166,14 +184,81 @@ fn item_count(state: State<Db>) -> Result<i64, String> {
     repo::count(&c).map_err(|e| err("统计失败", e))
 }
 
+/// 收起调色板。Esc 的第三级 —— 菜单没开、搜索框也是空的时候
+///
+/// 走自定义命令而不是前端的 getCurrentWindow().hide()：
+/// 后者要用到 core:window:allow-hide 权限，等于把窗口控制权整个交给前端；
+/// 自定义命令不需要 capability，权限面小一圈
 #[tauri::command]
-fn copy_to_clipboard(_id: i64) {
-    // TODO: 阶段 5 写系统剪贴板
+fn hide_window(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
 }
 
+/// 写回系统剪贴板。写入前要在 SelfWrite 记一笔，
+/// 否则监听线程下一轮会把它当成用户新复制的内容再入库一次
 #[tauri::command]
-fn paste(_id: i64) {
-    // TODO: 阶段 5 模拟按键粘贴
+fn copy_to_clipboard(
+    state: State<Db>,
+    sw: State<'_, Arc<SelfWrite>>,
+    id: i64,
+) -> Result<(), String> {
+    let content = {
+        let c = lock(&state)?;
+        repo::get(&c, id)
+            .map_err(|e| err("读取失败", e))?
+            .ok_or_else(|| "该条已被删除".to_string())?
+            .content
+    };
+    clipboard::write_text(&content)?;
+    sw.mark(&content);
+    Ok(())
+}
+
+/// 粘到弹出调色板前的前台应用。
+///
+/// 顺序不能换：先写剪贴板，再收起自己的窗口把焦点让出去，
+/// 目标应用到前台之后再等它稳定，最后才发 ⌘V。
+/// 少任何一步，按键都会落到 DevClip 自己身上
+///
+/// 必须是 async：同步命令按 Tauri 的默认 ExecutionContext 直接跑在主线程上，
+/// 而这里有等待和外部进程调用 —— 放主线程会把整个事件循环冻住
+#[tauri::command]
+async fn paste(
+    app: tauri::AppHandle,
+    state: State<'_, Db>,
+    sw: State<'_, Arc<SelfWrite>>,
+    target: State<'_, RestoreTarget>,
+    id: i64,
+) -> Result<(), String> {
+    let content = {
+        let c = lock(&state)?;
+        repo::get(&c, id)
+            .map_err(|e| err("读取失败", e))?
+            .ok_or_else(|| "该条已被删除".to_string())?
+            .content
+    };
+
+    clipboard::write_text(&content)?;
+    sw.mark(&content);
+
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+
+    let back = unpoison(&target.0).take();
+    if let Some(bundle) = back {
+        if let Err(e) = clipboard::activate(&bundle) {
+            // 窗口已经藏起来了，不还原的话用户只会看到调色板凭空消失，
+            // 报错文案根本没人看得见
+            show_palette(&app);
+            return Err(e);
+        }
+        // 目标应用激活是异步的，图标弹回动画期间发键会被丢掉
+        std::thread::sleep(std::time::Duration::from_millis(120));
+    }
+    clipboard::send_paste_keystroke()
 }
 
 #[tauri::command]
@@ -235,6 +320,52 @@ fn set_settings(_patch: serde_json::Value) -> Settings {
     default_settings()
 }
 
+// ── 窗口与快捷键 ─────────────────────────────────────────────────
+
+/// 让调色板显形。窗口启动时是隐藏的（见 tauri.conf.json），
+/// 全靠快捷键呼出来
+fn show_palette(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// 快捷键的显隐切换。记下前台应用：用户多半是从别的应用按快捷键过来的，
+/// 粘贴时要回到那里。自己的 bundle id 要排除掉 —— 从 Dock 点开应用后
+/// 我们会是前台，此时按快捷键如果把 DevClip 自己记进去，
+/// 粘贴时就会激活自己，⌘V 按在调色板上
+fn toggle_palette(app: &tauri::AppHandle) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    if matches!(w.is_visible(), Ok(true)) {
+        let _ = w.hide();
+        return;
+    }
+    if let Some(bundle) = clipboard::frontmost_app() {
+        if bundle != app.config().identifier {
+            *unpoison(&app.state::<RestoreTarget>().0) = Some(bundle);
+        }
+    }
+    show_palette(app);
+}
+
+/// 注册全局快捷键。注册不上就把窗口放出来 ——
+/// 多半是被别的应用抢占了或系统没给权限。这时用户如果还进不来，
+/// 就只剩杀进程重装，比多弹一个窗口糟糕得多
+fn register_hotkey(app: &tauri::AppHandle) {
+    let hotkey = default_settings().hotkey;
+    let Ok(shortcut) = hotkey.parse::<Shortcut>() else {
+        eprintln!("快捷键 {hotkey} 无法解析，窗口改为常驻显示");
+        return show_palette(app);
+    };
+    if let Err(e) = app.global_shortcut().register(shortcut) {
+        eprintln!("快捷键 {hotkey} 注册失败（{e}），窗口改为常驻显示");
+        show_palette(app);
+    }
+}
+
 // ── 入口 ─────────────────────────────────────────────────────────
 
 /// 数据库文件位置。Tauri 的 app_data_dir 在各平台分别是
@@ -250,6 +381,16 @@ fn db_path(app: &tauri::AppHandle) -> std::path::PathBuf {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // 松开时也会来一次事件，忽略，否则调色板会开一下就关
+                    if event.state == ShortcutState::Pressed {
+                        toggle_palette(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let path = db_path(app.handle());
             let conn = db::open(&path)
@@ -257,7 +398,21 @@ pub fn run() {
             app.manage(Db {
                 conn: std::sync::Mutex::new(conn),
             });
+            app.manage(RestoreTarget::default());
+
+            let sw = Arc::new(SelfWrite::default());
+            app.manage(sw.clone());
+            clipboard::spawn_watcher(app.handle().clone(), sw);
+
+            register_hotkey(app.handle());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 调色板是常驻后台的，关掉窗口只是收起，不是退出应用
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_items,
@@ -267,6 +422,7 @@ pub fn run() {
             clear_all,
             add_item,
             item_count,
+            hide_window,
             copy_to_clipboard,
             paste,
             available_actions,
