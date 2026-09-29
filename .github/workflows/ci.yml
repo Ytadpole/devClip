@@ -1,0 +1,107 @@
+# CI
+#
+# 两个 job：
+#
+#   test         单元测试 + 前端类型检查 + e2e。矩阵跑三个平台 ——
+#                业务逻辑与平台无关，但 cfg 分支可能写错：快捷键
+#                默认值、剪贴板监听的降级分支都只在各自平台上编译
+#   check-macos  真机构建 macOS。剪贴板监听、辅助功能授权检测、
+#                模拟按键这些 objc2 代码只有这里能验证
+#
+# ## 为什么没有「在 Linux 上交叉检查 macOS」
+#
+# 试过 `cargo check --target x86_64-apple-darwin`，过不了：tauri
+# 拉入 objc2-exception-helper，它要编译 .m 文件，需要支持
+# `-arch x86_64` 的 C 编译器，Linux 上没有，CI runner 上同样没有。
+# 加 clang 也救不回来 —— 还得有 macOS SDK 的 objc/runtime.h。
+# 独立的纯 objc2 探针（不带 tauri）能过，但那检查不到真实代码，
+# 所以不设这个 job，免得给一个从没跑通过的检查虚假的安心感
+#
+# WebKitGTK 固定 ubuntu-22.04：24.04 的 webkit2gtk 版本有变动，
+# 构建容易失败（见 docs/05）
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    strategy:
+      # macOS 与 Windows 只跑 lib 单元测试，不需要 e2e
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 webkit2gtk 开发包
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: 安装 pnpm
+        run: corepack enable
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 前端类型检查与构建
+        run: pnpm build
+
+      - name: e2e 类型检查
+        run: pnpm typecheck:e2e
+
+      - name: e2e 测试
+        if: runner.os == 'Linux'
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test
+
+      - name: Rust 单元测试
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: clippy
+        working-directory: src-tauri
+        run: cargo clippy --lib --tests -- -D warnings
+
+      - name: rustfmt
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+  check-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: 检查 Tauri 应用
+        working-directory: src-tauri
+        # 真机 SDK 下编译全部 target（含 examples）。这里只能验证
+        # 类型与 API 用法 —— 运行时的剪贴板监听、辅助功能授权
+        # 仍然只有装了应用、授权过的机器上才验得了
+        run: cargo check --all-targets
