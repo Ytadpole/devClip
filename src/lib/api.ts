@@ -78,4 +78,13 @@ export interface ClipboardApi {
 
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
+
+  /**
+   * 订阅剪贴板变化。后端抓到新内容入库后会回调，调用方据此刷新列表。
+   * 返回取消订阅的函数。
+   *
+   * mock 端没有真实剪贴板，回调永不触发 —— 界面照常工作，
+   * 不会因为缺事件而空转
+   */
+  subscribe(onChanged: () => void): () => void;
 }

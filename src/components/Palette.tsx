@@ -4,6 +4,7 @@ import { ContextMenu } from "./ContextMenu";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
+import { hideWindow } from "../lib/backend";
 import type { ContentType } from "../lib/api";
 
 /** 筛选栏只展示高频类型，完整列表留给设置页 */
@@ -66,9 +67,11 @@ export function Palette() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        // 三级逐层退出：菜单 → 搜索词 → 收起调色板。
+        // 最后一级的「收起」在浏览器里是空操作，e2e 跑的就是那条路
         if (st.menu) st.closeMenu();
         else if (st.query) st.setQuery("");
-        else inputRef.current?.blur();
+        else void hideWindow();
         return;
       }
 
@@ -211,7 +214,7 @@ export function Palette() {
                 <span className="ml-auto flex items-center gap-2">
                   {selected && <TypeBadge type={selected.contentType} />}
                   <span className="rounded bg-white/5 px-1.5 py-0.5 text-zinc-500">
-                    {backendLabel} 后端 · 阶段 1
+                    {backendLabel} 后端
                   </span>
                 </span>
               </>

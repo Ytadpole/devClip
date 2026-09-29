@@ -134,6 +134,10 @@ export const useStore = create<State>((set, get) => ({
 
   async init() {
     set({ loading: true });
+    // 后端抓到新内容会推 clipboard://changed。订阅一次就够 ——
+    // init 只在挂载时调一次，React 严格模式下的重复调用也拿不到新结果，
+    // 多订阅只会让同一条内容刷两遍
+    api.subscribe(() => void useStore.getState().refresh());
     try {
       await get().refresh();
     } finally {

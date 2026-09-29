@@ -7,6 +7,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ActionResult,
   ClipboardApi,
@@ -60,6 +61,37 @@ export const tauriApi: ClipboardApi = {
 
   async setSettings(patch: Partial<Settings>): Promise<Settings> {
     return invoke("set_settings", { patch });
+  },
+
+  subscribe(onChanged: () => void): () => void {
+    // listen 是异步的，而取消订阅必须能同步调用 —— 调用方拿到的
+    // 就是一个普通函数。所以先把 unlisten 挂起来，等它 resolve 之后
+    // 再决定是真取消还是立刻补取消（订阅过程中就被取消的情况）
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    void listen("clipboard://changed", () => onChanged())
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {
+        // 浏览器里没有 Tauri 的事件通道。e2e 跑的就是这个环境，
+        // 静默退化成「永不触发」即可，不该在控制台留红
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
+};
+
+/**
+ * 收起调色板窗口。Esc 在浏览器里没有窗口可收，所以走 backend.ts 分派，
+ * 别处不直接引这里
+ */
+export const tauriWindow = {
+  hide(): Promise<void> {
+    return invoke("hide_window");
   },
 };
 

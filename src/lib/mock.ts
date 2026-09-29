@@ -348,4 +348,10 @@ export const mockApi: ClipboardApi = {
     settings = { ...settings, ...patch };
     return delay({ ...settings });
   },
+
+  subscribe() {
+    // 没有真实剪贴板，也就没有事件可听。空函数即可 ——
+    // 界面本来就该在没有新内容时保持原样
+    return () => {};
+  },
 };
