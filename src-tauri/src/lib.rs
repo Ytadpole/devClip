@@ -17,8 +17,10 @@
 pub mod clipboard;
 pub mod db;
 mod detect;
+mod hotkey;
 pub mod repo;
 mod sensitive;
+mod settings;
 
 use clipboard::SelfWrite;
 use db::DbError;
@@ -352,19 +354,91 @@ fn toggle_palette(app: &tauri::AppHandle) {
     show_palette(app);
 }
 
+/// 设置文件位置，与数据库同目录
+fn settings_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    dir.join("settings.json")
+}
+
 /// 注册全局快捷键。注册不上就把窗口放出来 ——
 /// 多半是被别的应用抢占了或系统没给权限。这时用户如果还进不来，
 /// 就只剩杀进程重装，比多弹一个窗口糟糕得多
+///
+/// 优先用用户上次设过的；没设过才用平台默认值。
+/// 早先每次启动都用默认值，用户改了也没用 —— 文档里那一项
+/// 写得再清楚也没意义
 fn register_hotkey(app: &tauri::AppHandle) {
-    let hotkey = default_settings().hotkey;
-    let Ok(shortcut) = hotkey.parse::<Shortcut>() else {
-        eprintln!("快捷键 {hotkey} 无法解析，窗口改为常驻显示");
+    let platform = hotkey::Platform::current();
+    let stored = settings::load(&settings_path(app));
+    let spec = stored
+        .hotkey
+        .unwrap_or_else(|| hotkey::default_hotkey(platform).to_string());
+
+    let Ok(shortcut) = spec.parse::<Shortcut>() else {
+        eprintln!("快捷键 {spec} 无法解析，窗口改为常驻显示");
         return show_palette(app);
     };
+
+    // 冲突预判。系统占用情况只有真注册时才知道，那是上面那步；
+    // 这里拦的是**已知**被占用的组合 —— 提前说清楚「被谁占了」
+    // 比让用户看着一个注册失败强
+    if let Err(why) = hotkey::check(platform, &shortcut) {
+        eprintln!("快捷键 {spec} 不建议使用：{why}");
+    }
+
     if let Err(e) = app.global_shortcut().register(shortcut) {
-        eprintln!("快捷键 {hotkey} 注册失败（{e}），窗口改为常驻显示");
+        eprintln!("快捷键 {spec} 注册失败（{e}），窗口改为常驻显示");
         show_palette(app);
     }
+}
+
+/// 改快捷键。返回规范化后的值。
+///
+/// 前端会直接显示 Err 的内容，所以文案要能照着做 ——
+/// 尤其是「已被占用」和「格式不对」必须分开说
+#[tauri::command]
+fn set_hotkey(app: tauri::AppHandle, accel: String) -> Result<String, String> {
+    let platform = hotkey::Platform::current();
+    let shortcut: Shortcut = accel
+        .parse()
+        .map_err(|_| format!("无法识别这个快捷键：{accel}。用 Alt+Shift+V 这种写法"))?;
+
+    hotkey::check(platform, &shortcut)?;
+
+    let gs = app.global_shortcut();
+    // 先注销旧的再注册新的。不注销的话平台会报「已被占用」，
+    // 而占用者其实是我们自己上一个组合
+    let stored = settings::load(&settings_path(&app));
+    if let Some(old) = stored.hotkey.as_ref() {
+        if let Ok(old_hk) = old.parse::<Shortcut>() {
+            let _ = gs.unregister(old_hk);
+        }
+    }
+
+    gs.register(shortcut)
+        .map_err(|e| format!("快捷键注册失败：{e}"))?;
+
+    let canon = shortcut.to_string();
+    let next = settings::Stored {
+        hotkey: Some(canon.clone()),
+    };
+    // 存失败不影响本次注册，只是下次启动会回到默认值
+    if let Err(e) = settings::save(&settings_path(&app), &next) {
+        eprintln!("快捷键没存住，下次启动会回到默认值: {e}");
+    }
+    Ok(canon)
+}
+
+/// 读当前快捷键。没设过就返回平台默认值
+#[tauri::command]
+fn get_hotkey(app: tauri::AppHandle) -> String {
+    let platform = hotkey::Platform::current();
+    settings::load(&settings_path(&app))
+        .hotkey
+        .unwrap_or_else(|| hotkey::default_hotkey(platform).to_string())
 }
 
 // ── 入口 ─────────────────────────────────────────────────────────
@@ -430,6 +504,8 @@ pub fn run() {
             run_toolbox_action,
             get_settings,
             set_settings,
+            set_hotkey,
+            get_hotkey,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
