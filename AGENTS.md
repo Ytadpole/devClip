@@ -83,12 +83,14 @@ Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 - **复杂的「为什么」写进 `docs/DEVLOG.md`**，那条记录与 GitHub 上的
   commit **一一对应**，以 commit hash 为键。该文件已入库，所以
   「一一对应」变成了对读者的承诺，不只是自己的备忘
-- 追加 DEVLOG 条目时顺序必须与 `git log --reverse` 一致。提交后校验：
+- 追加 DEVLOG 条目时顺序必须与 `git log --reverse` 一致。提交后校验
+  （最后一条 commit 自己的条目要等**下一次**提交才写得出，所以只在
+  「差一行且那一行是最新 commit」时放过）：
 
   ```bash
   grep -oE '^## [0-9a-f]{7}' docs/DEVLOG.md | awk '{print $2}' > /tmp/dl.txt
   git log --format='%h' --reverse > /tmp/gl.txt
-  diff /tmp/dl.txt /tmp/gl.txt
+  diff /tmp/dl.txt /tmp/gl.txt   # 期望只差最后一行
   ```
 - 一次提交一个主题；超过 50 行的改动就拆成多次提交
 

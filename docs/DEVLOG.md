@@ -4,7 +4,24 @@ commit message 只留一行摘要。这里存「为什么」——踩过的坑�
 取舍、当时的环境约束。**每条以 commit hash 为键，与 GitHub 上一一对应。**
 
 已推送的 hash 可在 <https://github.com/Ytadpole/devClip/commits/main> 查到。
-本文件在 gitignore 内，不进版本库。
+
+## 怎么读这份文件
+
+条目**按 `git log --reverse` 的顺序**排列，也就是时间顺序。校验：
+
+```bash
+grep -oE '^## [0-9a-f]{7}' docs/DEVLOG.md | awk '{print $2}' > /tmp/dl.txt
+git log --format='%h' --reverse > /tmp/gl.txt
+diff /tmp/dl.txt /tmp/gl.txt
+```
+
+**本文件原本是 gitignore 的本地笔记**，`2c02b75` 起纳入版本库。
+所以那之前的条目是**事后补录**的：那些 commit 推送时并没有带上对应
+记录，是本文件入库时一次补上的。内容本身当时就写在本地笔记里，
+只是补录时点晚于 commit —— 读的时候不必当成「当时就记下了」。
+
+最后一条没有条目：它就是让这个文件进入版本库的那次提交，
+条目无法包含自己这个尚未产生的 hash。
 
 ---
 
