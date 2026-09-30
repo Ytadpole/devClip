@@ -372,9 +372,54 @@ fn set_settings(_patch: serde_json::Value) -> Settings {
     default_settings()
 }
 
-// ── 窗口与快捷键 ─────────────────────────────────────────────────
+// ── 过期清理后台任务 ─────────────────────────────────────────────
 
-/// 让调色板显形。窗口启动时是隐藏的（见 tauri.conf.json），
+/// 清理检查间隔。敏感 TTL 是 60 秒，5 秒一轮足以让「到期即消失」
+/// 没有可感知的延迟，也远谈不上 CPU 开销
+const EXPIRY_CHECK: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 跑一轮清理：删掉已到期条目；剪贴板里躺的正是刚删内容时把它
+/// 一并清空；有删除才通知前端刷新。返回删掉的条数
+fn purge_tick(app: &tauri::AppHandle) -> usize {
+    let removed = {
+        let state = app.state::<Db>();
+        let conn = unpoison(&state.conn);
+        repo::purge_expired(&conn, repo::now_ms()).unwrap_or_else(|e| {
+            eprintln!("过期清理失败：{e}");
+            vec![]
+        })
+    };
+    if removed.is_empty() {
+        return 0;
+    }
+    // 数据库锁上面已经还了：剪贴板是系统调用，慢了也不能拖住别的命令。
+    // 比对在本地做，不用再回数据库
+    if let Some(cur) = clipboard::read_text() {
+        if removed.iter().any(|s| s == &cur) {
+            if let Err(e) = clipboard::clear_text() {
+                eprintln!("{e}");
+            }
+        }
+    }
+    // 载荷无所谓，前端订阅方只拿它当「该刷新了」的信号
+    let _ = tauri::Emitter::emit(app, "clipboard://changed", serde_json::json!({}));
+    removed.len()
+}
+
+/// 后台清理线程。启动先清一轮 —— 应用没在跑的期间到期的条目
+/// （比如上次退出前刚复制的密钥）不该等到下一个 5 秒才消失，
+/// 更不该在启动后的整个会话里一直留着
+fn spawn_expiry_task(app: tauri::AppHandle) {
+    std::thread::Builder::new()
+        .name("devclip-expiry".into())
+        .spawn(move || loop {
+            purge_tick(&app);
+            std::thread::sleep(EXPIRY_CHECK);
+        })
+        .expect("起过期清理线程失败");
+}
+
+// ── 窗口与快捷键 ─────────────────────────────────────────────────/// 让调色板显形。窗口启动时是隐藏的（见 tauri.conf.json），
 /// 全靠快捷键呼出来
 fn show_palette(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -620,6 +665,8 @@ pub fn run() {
             let sw = Arc::new(SelfWrite::default());
             app.manage(sw.clone());
             clipboard::spawn_watcher(app.handle().clone(), sw);
+
+            spawn_expiry_task(app.handle().clone());
 
             register_hotkey(app.handle());
             build_tray(app.handle()).unwrap_or_else(|e| {

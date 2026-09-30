@@ -300,13 +300,35 @@ pub fn count(conn: &Connection) -> Result<i64, DbError> {
 }
 
 /// 查已到期的条目。阶段 7 的后台清理任务会调用
-#[allow(dead_code)]
 pub fn expired(conn: &Connection, now: i64) -> Result<Vec<i64>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT id FROM clipboard_item WHERE expires_at IS NOT NULL AND expires_at <= ?1",
     )?;
     let rows = stmt.query_map(params![now], |r| r.get::<_, i64>(0))?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// 删除全部已到期条目，返回被删的内容原文。
+///
+/// 调用方（后台任务）拿它去比对剪贴板：如果剪贴板里躺着的正是
+/// 刚删掉的敏感内容，就得把它一并清掉 —— 不然条目没了，
+/// 密钥还挂在系统剪贴板上等着下一个粘贴目标。
+///
+/// 取数与删除在同一把连接锁内完成，调用方不要在两次调用之间
+/// 制造窗口让别的内容插进来
+pub fn purge_expired(conn: &Connection, now: i64) -> Result<Vec<String>, DbError> {
+    let ids = expired(conn, now)?;
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut contents = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Some(it) = get(conn, *id)? {
+            contents.push(it.content);
+        }
+    }
+    remove(conn, &ids)?;
+    Ok(contents)
 }
 
 /// 保留期与条数上限的清理。收藏项永不自动清理 —— 用户明确标记过的东西。
@@ -584,6 +606,25 @@ mod tests {
         assert!(expired(&c, now_ms()).unwrap().is_empty());
         conn_set_expiry(&c, id, now_ms() - 1000);
         assert_eq!(expired(&c, now_ms()).unwrap(), vec![id]);
+    }
+
+    /// 清理只带走到期项：返回的是被删内容，没到期的留在库里。
+    /// 这是「60 秒后自动消失」验收的核心逻辑
+    #[test]
+    fn purge_expired_removes_only_due_items() {
+        let c = open_in_memory().unwrap();
+        let (gone, _) = add_sensitive(&c, "sk_live_abcdefghijklmnopqr", -1_000);
+        let (stay, _) = add_sensitive(&c, "AKIAIOSFODNN7EXAMPLE", 60_000);
+        add(&c, "plain");
+
+        let removed = purge_expired(&c, now_ms()).unwrap();
+        assert_eq!(removed, vec!["sk_live_abcdefghijklmnopqr".to_string()]);
+        assert!(get(&c, gone).unwrap().is_none(), "到期的应已删除");
+        assert!(get(&c, stay).unwrap().is_some(), "没到期的不该被带走");
+        assert_eq!(count(&c).unwrap(), 2);
+
+        // 再清一遍是空操作，不报错也不重复返回
+        assert!(purge_expired(&c, now_ms()).unwrap().is_empty());
     }
 
     /// docs/03：敏感项默认不参与普通结果，展开「含敏感」分组才可见。

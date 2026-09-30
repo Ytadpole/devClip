@@ -57,6 +57,15 @@ pub fn write_text(text: &str) -> Result<(), String> {
         .map_err(|e| format!("写入剪贴板失败：{e}"))
 }
 
+/// 清空剪贴板。敏感条目到期删除时，如果剪贴板里躺的还是它，
+/// 必须一并清掉 —— 条目从历史里消失了，密钥却还在剪贴板上
+/// 等着下一个粘贴目标，等于没删
+pub fn clear_text() -> Result<(), String> {
+    Clipboard::new()
+        .and_then(|mut cb| cb.clear())
+        .map_err(|e| format!("清空剪贴板失败：{e}"))
+}
+
 /// 记住「刚才是我们自己写进去的」。
 ///
 /// copy / paste 命令会把内容写回系统剪贴板，监听线程下一轮就会看到它，
