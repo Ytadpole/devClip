@@ -1123,3 +1123,16 @@ exit 143；改后 30 条 53 秒全过、exit 0、1420 端口释放。
 server」路径，根本没验证收尾。杀掉残留重跑，拿到「自起 server +
 正常退出 + 端口释放」的干净证据才算数。杀进程时 timeout 只杀
 直接子进程、不追孤儿，和这次挂死是同一个机理。
+
+---
+
+## a7b8df2 · 2026-10-01 · fix: ci 补装 libxdo-dev，linux 链接要它
+
+ubuntu 挂在 `cargo test --lib` 的链接阶段：`rust-lld: unable to find
+library -lxdo`。要 libxdo 的不是项目代码，是 tauri → muda（菜单库）
+→ libxdo 这条传递依赖 —— 而 libxdo-dev 本就在 Tauri 官方 Linux
+前置清单里，CI 的 apt 列表从 a70abb1 起就漏了它。此前每次都死在
+setup-node，从未活到链接这一步，所以一直没暴露。
+
+本地 216 条单测连同链接全过（本机早装了 libxdo-dev），CI 缺的只有
+这一个系统包。
