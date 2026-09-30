@@ -1061,3 +1061,34 @@ setup-node 的 `cache: pnpm` 要先跑 `pnpm store path` 算缓存目录，
 诊断方式：日志下载要 admin 权限（匿名 403），只靠 jobs API 看到
 四个 job 全部挂在 setup-node 这一步，结合 workflow 顺序推到根因；
 若推送后仍红，`gh auth login` 之后拉日志再看。
+
+---
+
+## 0cf9f14 · 2026-10-01 · docs: 补记三条缺失的 DEVLOG
+
+纯补录：把 8dd5e3e、072b5e6、aab4a6d 三条的记录写进本文件，本身
+没有代码改动，不再展开。
+
+---
+
+## 0f1d273 · 2026-10-01 · fix: linux 专属 examples 加 cfg 门控
+
+check-macos 的失败不是偶发。拉到日志（gh 登录后）：挂在 example
+`x11probe` 与 `linux_live` —— E0432 `arboard::SetExtLinux`、E0433
+`clipboard::linux`、E0599 `wait`。两个探针是 b597f44 时期为 X11
+事实调查写的 Linux 专属脚本，没做 cfg 门控。
+
+**为什么一直没暴露。** a70abb1 写 check-macos 时只有平台无关的
+seed.rs，还顺手下了「examples 三个平台都能编」的结论；两个探针是
+那之后加的，而 CI 从 a70abb1 起就卡在 setup-node 从未跑到过这一步
+—— 那个结论从此没被检验过，直到今天。
+
+**记录一次自己的误判。** 先前只读了 seed.rs 就断言「examples 平台
+无关」，又拿「92 秒死得不像编译错误」强化偶发猜想；日志证明两条
+都错了 —— examples 还有别的文件，而依赖并行编译时 example 的错误
+完全可以在 92 秒内爆出来。
+
+修法：逐项 `#[cfg(target_os = "linux")]` 加反向 cfg 的空 main 兜底；
+crate 级 `#![cfg]` 整文件门控会报 E0601（本地实验确认）。非 Linux
+路径的验证用「把条件临时翻成 plan9 本地模拟」跑过一遍，编译通过；
+那 11 条 unexpected_cfgs 警告是假目标值触发的 lint，属模拟 artifact。
