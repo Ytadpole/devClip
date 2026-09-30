@@ -40,6 +40,11 @@ export interface Query {
   text?: string;
   types?: ContentType[];
   favoriteOnly?: boolean;
+  /**
+   * 含敏感信息的分组。默认关 —— 敏感项不参与任何普通结果，
+   * 用户主动展开才可见（docs/03）。过滤在后端做，前端不碰
+   */
+  includeSensitive?: boolean;
   since?: number;
   limit?: number;
   offset?: number;
@@ -100,6 +105,15 @@ export interface ClipboardApi {
 
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
+
+  /**
+   * 改全局快捷键。返回规范化后的串（如 `shift+alt+v`）。
+   *
+   * 单独一个方法而不塞进 setSettings：它有注册系统钩子这种
+   * 立即生效的副作用，失败方式也不同（可能被其他应用占用）。
+   * Err 的内容是能直接展示的中文
+   */
+  setHotkey(accel: string): Promise<string>;
 
   /**
    * 订阅剪贴板变化。后端抓到新内容入库后会回调，调用方据此刷新列表。

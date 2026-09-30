@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Command } from "cmdk";
 import { ContextMenu } from "./ContextMenu";
+import { SettingsPanel } from "./SettingsPanel";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
@@ -37,6 +38,15 @@ export function Palette() {
       const st = useStore.getState();
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
+
+      // 设置页盖着列表时，导航键都是输入框的事，这里只管 Esc 退回
+      if (st.view === "settings") {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          st.closeSettings();
+        }
+        return;
+      }
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -95,11 +105,14 @@ export function Palette() {
   }, []);
 
   const selected = s.items[s.selected];
-  const filtered = s.types.length > 0 || s.favoriteOnly;
+  const filtered = s.types.length > 0 || s.favoriteOnly || s.sensitive;
 
   return (
     <div className="flex min-h-screen justify-center bg-zinc-950 pt-[11vh] text-zinc-300 antialiased">
       <div className="w-full max-w-[680px] px-4">
+        {s.view === "settings" ? (
+          <SettingsPanel />
+        ) : (
         <Command
           label="DevClip 剪贴板"
           shouldFilter={false}
@@ -149,6 +162,18 @@ export function Palette() {
             >
               ⭐ 仅收藏
             </button>
+            <button
+              type="button"
+              onClick={s.toggleSensitive}
+              title="展开疑似密钥 / token 的分组"
+              className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                s.sensitive
+                  ? "bg-rose-400/20 text-rose-300"
+                  : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+              }`}
+            >
+              🔒 含敏感
+            </button>
             <span className="mx-0.5 h-3.5 w-px bg-white/10" />
             {QUICK_TYPES.map((t) => (
               <button
@@ -174,6 +199,14 @@ export function Palette() {
                   清除筛选
                 </button>
               )}
+              <button
+                type="button"
+                onClick={s.openSettings}
+                title="设置"
+                className="rounded px-1.5 py-0.5 transition-colors hover:bg-white/5 hover:text-zinc-300"
+              >
+                ⚙ 设置
+              </button>
               共 {s.items.length} 条
             </span>
           </div>
@@ -241,6 +274,7 @@ export function Palette() {
             )}
           </div>
         </Command>
+        )}
       </div>
 
       <ContextMenu />

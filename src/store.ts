@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 import { api, backendName } from "./lib/backend";
-import type { ActionResult, ClipboardItem, ContentType, ToolboxAction } from "./lib/api";
+import type { ActionResult, ClipboardItem, ContentType, Settings, ToolboxAction } from "./lib/api";
 
 /** 搜索防抖。docs/06 定的是 80ms：再小则每个击键都打一次后端，
  * 再大则能感觉到「搜索不跟手」。 */
@@ -44,6 +44,12 @@ interface State {
   query: string;
   types: ContentType[];
   favoriteOnly: boolean;
+  /** 含敏感信息分组。默认关，见 api.ts Query 的说明 */
+  sensitive: boolean;
+  /** 调色板当前视图。设置页盖在列表上，Esc 退回 */
+  view: "list" | "settings";
+  /** 设置页的草稿来源。打开设置页时拉一次 */
+  settings: Settings | null;
   selected: number;
   status: Status | null;
   menu: MenuTarget | null;
@@ -56,11 +62,17 @@ interface State {
   setQuery: (q: string) => void;
   toggleType: (t: ContentType) => void;
   toggleFavoriteOnly: () => void;
+  toggleSensitive: () => void;
   clearFilters: () => void;
   select: (i: number) => void;
   move: (d: number) => void;
   jump: (i: number) => void;
   loadActions: (t: ContentType) => Promise<void>;
+
+  openSettings: () => void;
+  closeSettings: () => void;
+  saveSettings: (patch: Partial<Settings>) => Promise<void>;
+  saveHotkey: (accel: string) => Promise<void>;
 
   toggleFavorite: (id: number) => Promise<void>;
   copy: (id: number) => Promise<void>;
@@ -89,10 +101,16 @@ let reqSeq = 0;
  * 用户只会觉得「搜不出来」，看不到任何原因。
  */
 async function fetchItems(): Promise<ClipboardItem[] | null> {
-  const { query, types, favoriteOnly } = useStore.getState();
+  const { query, types, favoriteOnly, sensitive } = useStore.getState();
   const seq = ++reqSeq;
   try {
-    const items = await api.list({ text: query, types, favoriteOnly, limit: PAGE_LIMIT });
+    const items = await api.list({
+      text: query,
+      types,
+      favoriteOnly,
+      includeSensitive: sensitive,
+      limit: PAGE_LIMIT,
+    });
     return seq === reqSeq ? items : null;
   } catch (e) {
     if (seq === reqSeq) {
@@ -133,6 +151,9 @@ export const useStore = create<State>((set, get) => ({
   query: "",
   types: [],
   favoriteOnly: false,
+  sensitive: false,
+  view: "list",
+  settings: null,
   selected: 0,
   status: null,
   menu: null,
@@ -194,8 +215,13 @@ export const useStore = create<State>((set, get) => ({
     void get().refilter();
   },
 
+  toggleSensitive() {
+    set({ sensitive: !get().sensitive });
+    void get().refilter();
+  },
+
   clearFilters() {
-    set({ types: [], favoriteOnly: false });
+    set({ types: [], favoriteOnly: false, sensitive: false });
     void get().refilter();
   },
 
@@ -219,6 +245,41 @@ export const useStore = create<State>((set, get) => ({
     // 快速移动选中项时，旧的慢响应会盖掉新的
     if (useStore.getState().items[useStore.getState().selected]?.contentType !== t) return;
     set({ actions });
+  },
+
+  // ── 设置页 ──────────────────────────────────────────────────
+  openSettings() {
+    set({ view: "settings", settings: null });
+    api
+      .getSettings()
+      .then((s) => set({ settings: s }))
+      .catch((e) => get().say(errorText(e) || "读取设置失败", "err"));
+  },
+
+  closeSettings() {
+    set({ view: "list" });
+  },
+
+  async saveSettings(patch) {
+    // 后端返回合并后的完整设置，直接拿来当新草稿 ——
+    // 数值范围截断发生在后端，前端显示的应是被接受的那个值
+    try {
+      const s = await api.setSettings(patch);
+      set({ settings: s });
+      get().say("设置已保存");
+    } catch (e) {
+      get().say(errorText(e) || "保存设置失败", "err");
+    }
+  },
+
+  async saveHotkey(accel) {
+    try {
+      const canon = await api.setHotkey(accel);
+      set({ settings: { ...(get().settings as Settings), hotkey: canon } });
+      get().say(`快捷键已改为 ${canon}`);
+    } catch (e) {
+      get().say(errorText(e) || "保存快捷键失败", "err");
+    }
   },
 
   // 以下都是「操作 + 重新拉取」的形状。阶段 4 起 Rust 会返回

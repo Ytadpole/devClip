@@ -63,6 +63,10 @@ export const tauriApi: ClipboardApi = {
     return invoke("set_settings", { patch });
   },
 
+  async setHotkey(accel: string): Promise<string> {
+    return invoke("set_hotkey", { accel });
+  },
+
   subscribe(onChanged: () => void, onNotice?: (text: string) => void): () => void {
     // listen 是异步的，而取消订阅必须能同步调用 —— 调用方拿到的
     // 就是一个普通函数。所以先把 unlisten 挂起来，等它 resolve 之后

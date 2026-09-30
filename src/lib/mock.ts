@@ -316,6 +316,9 @@ export const mockApi: ClipboardApi = {
   async list(q: Query) {
     let out = [...db];
 
+    // 与 Rust 的 repo::list 对齐：敏感项默认不参与任何结果，
+    // 展开「含敏感」分组（includeSensitive）才可见
+    if (!q.includeSensitive) out = out.filter((i) => !i.sensitive);
     if (q.favoriteOnly) out = out.filter((i) => i.favorite);
     if (q.types?.length) out = out.filter((i) => q.types!.includes(i.contentType));
     if (q.since) out = out.filter((i) => i.lastCopiedAt >= q.since!);
@@ -418,6 +421,13 @@ export const mockApi: ClipboardApi = {
   async setSettings(patch) {
     settings = { ...settings, ...patch };
     return delay({ ...settings });
+  },
+
+  async setHotkey(accel) {
+    // 没有真的注册这回事，浏览器里没有全局快捷键可占。
+    // 存下来让设置页回显即可
+    settings = { ...settings, hotkey: accel };
+    return delay(accel);
   },
 
   subscribe() {
