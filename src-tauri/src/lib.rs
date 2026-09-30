@@ -21,6 +21,7 @@ mod hotkey;
 pub mod repo;
 mod sensitive;
 mod settings;
+pub mod toolbox;
 
 use clipboard::SelfWrite;
 use db::DbError;
@@ -29,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use toolbox::ToolboxAction;
 
 /// 调色板弹出前的前台应用，粘贴时要回到那里。
 ///
@@ -50,13 +52,6 @@ fn unpoison<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// 命令都是同步的，持锁期间不会跨 await 点，不存在死锁风险
 pub struct Db {
     pub conn: std::sync::Mutex<rusqlite::Connection>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolboxAction {
-    pub id: String,
-    pub label: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -290,50 +285,78 @@ async fn paste(
 
 #[tauri::command]
 fn available_actions(content_type: String) -> Vec<ToolboxAction> {
-    // TODO: 阶段 6 从动作注册表动态返回
-    match content_type.as_str() {
-        "json" => vec![
-            ToolboxAction {
-                id: "json.format".into(),
-                label: "Format".into(),
-            },
-            ToolboxAction {
-                id: "json.minify".into(),
-                label: "Minify".into(),
-            },
-            ToolboxAction {
-                id: "json.sort_keys".into(),
-                label: "Sort Keys".into(),
-            },
-        ],
-        "jwt" => vec![
-            ToolboxAction {
-                id: "jwt.decode_header".into(),
-                label: "Decode Header".into(),
-            },
-            ToolboxAction {
-                id: "jwt.decode_payload".into(),
-                label: "Decode Payload".into(),
-            },
-        ],
-        "sql" => vec![
-            ToolboxAction {
-                id: "sql.format".into(),
-                label: "Format".into(),
-            },
-            ToolboxAction {
-                id: "sql.tables".into(),
-                label: "Extract Tables".into(),
-            },
-        ],
-        _ => vec![],
+    // 注册表是唯一的事实来源。前端不认任何具体类型 ——
+    // 加一类动作只改 toolbox/mod.rs 一处
+    let t = content_type.parse().unwrap_or(detect::ContentType::Text);
+    toolbox::for_type(t)
+}
+
+/// 跑一个工具箱动作。返回的是**一句摘要**，不是结果本身。
+///
+/// 结果已经写进系统剪贴板了：工具箱的用处就是「变换完直接粘」，
+/// 而调色板状态栏只有一行、2.6 秒后自动消失 —— 塞不下格式化后的 JSON。
+/// 写剪贴板前必须在 `SelfWrite` 记一笔，否则监听线程会把这个
+/// 结果当成用户在别处复制的内容，又存一条
+#[tauri::command]
+fn run_toolbox_action(
+    db: State<'_, Db>,
+    sw: State<'_, Arc<SelfWrite>>,
+    id: i64,
+    action_id: String,
+) -> ActionResult {
+    let entry = match toolbox::find(&action_id) {
+        Some(e) => e,
+        None => return ActionResult::err(format!("没有这个动作：{action_id}")),
+    };
+    let item = {
+        let conn = unpoison(&db.conn);
+        match repo::get(&conn, id) {
+            Ok(Some(it)) => it,
+            Ok(None) => return ActionResult::err(format!("第 {id} 条已不在历史里")),
+            Err(e) => return ActionResult::err(format!("读取失败：{e}")),
+        }
+    };
+    // 动作是按 id 找到的，但还得确认它对**这一条**适用。
+    // UI 只会给出适用的动作，所以这条防线平时不触发；它是给
+    // 「invoke 传了别的类型的动作」兜底的 —— 否则一句普通文本
+    // 会被当 JSON 解析，报一个跟用户操作对不上的错
+    let t: detect::ContentType = item
+        .content_type
+        .parse()
+        .unwrap_or(detect::ContentType::Text);
+    if !entry.applies_to.contains(&t) {
+        return ActionResult::err(format!("「{}」不能用在 {} 上", entry.label, t.as_str()));
+    }
+    match (entry.run)(&item.content) {
+        Ok(value) => {
+            sw.mark(&value);
+            if let Err(e) = clipboard::write_text(&value) {
+                return ActionResult::err(format!("动作成功但写不回剪贴板：{e}"));
+            }
+            let n = item.content.len();
+            ActionResult::ok(format!(
+                "{}：{} → {}，已复制到剪贴板",
+                entry.label,
+                human(n),
+                human(value.len())
+            ))
+        }
+        Err(e) => ActionResult::err(e),
     }
 }
 
-#[tauri::command]
-fn run_toolbox_action(_id: i64, action_id: String) -> ActionResult {
-    // TODO: 阶段 6 实现具体动作
-    ActionResult::err(format!("阶段 2：动作 {} 尚未实现", action_id))
+/// 字节数转成人看得懂的量级。摘要里报体积比报字符数有用 ——
+/// 「2.1 KB」比「2104」更容易判断要不要粘
+fn human(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < KB {
+        format!("{bytes} B")
+    } else if b < KB * KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{:.1} MB", b / (KB * KB))
+    }
 }
 
 #[tauri::command]

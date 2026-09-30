@@ -6,6 +6,7 @@
  */
 use base64::Engine;
 use serde_json::Value;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentType {
@@ -45,6 +46,33 @@ impl ContentType {
             ContentType::Code => "code",
             ContentType::Text => "text",
         }
+    }
+}
+
+impl FromStr for ContentType {
+    type Err = ();
+
+    /// 数据库里存的是字符串，反查回枚举。
+    ///
+    /// 认不出来时**回退到 Text** 而不是报错：这是一条只读路径
+    /// （查可用动作、判断动作适不适用），为了让一条脏数据
+    /// 把整个工具箱卡住不划算
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "image" => ContentType::Image,
+            "json" => ContentType::Json,
+            "jwt" => ContentType::Jwt,
+            "uuid" => ContentType::Uuid,
+            "ip" => ContentType::Ip,
+            "url" => ContentType::Url,
+            "commit" => ContentType::Commit,
+            "exception" => ContentType::Exception,
+            "sql" => ContentType::Sql,
+            "base64" => ContentType::Base64,
+            "markdown" => ContentType::Markdown,
+            "code" => ContentType::Code,
+            _ => ContentType::Text,
+        })
     }
 }
 
