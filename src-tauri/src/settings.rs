@@ -1,8 +1,7 @@
-//! 设置持久化 —— 阶段 5（只含快捷键）
+//! 设置持久化 —— 阶段 5（快捷键）→ 阶段 7（全部设置项）
 //!
-//! 完整的设置项（保留天数、主题、敏感信息策略等）属于阶段 7。
-//! 这里只存快捷键，因为不存的话用户每次启动都要重新确认一遍，
-//! 这个功能等于没做。
+//! 落盘的是 `Stored`：每个字段都是 Option，读出来的缺字段用默认值补 ——
+//! 以后加设置项时，老配置文件缺字段是常态，不能因此读不出来。
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -11,11 +10,23 @@ use std::path::Path;
 ///
 /// `Option<String>` 而不是「空串表示没设过」：空串不是合法快捷键，
 /// 用户手改配置文件时写空串进来，语义应该是「没设」，
-/// 而不是「有个我读不懂的快捷键」
+/// 而不是「有个我读不懂的快捷键」。
+/// 数值/布尔项同理 —— `None` = 用默认值，`0` 是合法值
+/// （比如 retention_days = 0 表示「立即过期」），不能用 0 当「没设」
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Stored {
     pub hotkey: Option<String>,
+    /// 历史最多保留多少条
+    pub max_items: Option<i64>,
+    /// 历史保留天数，0 = 立即过期（收藏项除外）
+    pub retention_days: Option<i64>,
+    /// 单张图片入库的字节上限
+    pub max_image_bytes: Option<i64>,
+    /// dark / light / system。UI 尚未消费，先存着
+    pub theme: Option<String>,
+    /// 敏感内容是否到期自动删除（docs/03 的 sensitive.auto_expire）
+    pub sensitive_auto_expire: Option<bool>,
 }
 
 /// 读设置。文件不存在或读不懂都返回默认值
@@ -96,6 +107,25 @@ mod tests {
         let p = dir("roundtrip").join("settings.json");
         let want = Stored {
             hotkey: Some("Ctrl+Shift+Space".into()),
+            ..Default::default()
+        };
+        save(&p, &want).unwrap();
+        assert_eq!(load(&p), want);
+    }
+
+    /// 全字段落盘再读回来，一个都不能丢。
+    /// settings_to_stored 建立在「Stored 能完整表达 Settings」上，
+    /// 少一个字段就是静默重置
+    #[test]
+    fn roundtrip_all_fields() {
+        let p = dir("roundtrip-all").join("settings.json");
+        let want = Stored {
+            hotkey: Some("Ctrl+Shift+Space".into()),
+            max_items: Some(500),
+            retention_days: Some(7),
+            max_image_bytes: Some(1024),
+            theme: Some("light".into()),
+            sensitive_auto_expire: Some(false),
         };
         save(&p, &want).unwrap();
         assert_eq!(load(&p), want);
@@ -119,6 +149,7 @@ mod tests {
             &p,
             &Stored {
                 hotkey: Some("Alt+V".into()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -139,6 +170,7 @@ mod tests {
             &p,
             &Stored {
                 hotkey: Some("Alt+V".into()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -146,6 +178,7 @@ mod tests {
             &p,
             &Stored {
                 hotkey: Some("Ctrl+Shift+Space".into()),
+                ..Default::default()
             },
         )
         .unwrap();

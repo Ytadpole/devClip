@@ -26,13 +26,10 @@ const POLL: Duration = Duration::from_millis(500);
 /// 全量入库会让 SQLite 迅速膨胀，而且这种内容在调色板里也没法看
 const MAX_BYTES: usize = 1024 * 1024;
 
-/// 保留条数与天数。阶段 7 接到设置项后从 get_settings 取
-const MAX_ITEMS: i64 = 1000;
-const RETENTION_DAYS: i64 = 30;
-
 /// 敏感内容的存活时间（docs/03：now + 60s）。
 /// 到期由后台任务删除并清空剪贴板；再次复制会顺延。
-/// 阶段 7 接到设置项 sensitiveAutoExpire 后由它开关
+/// 是否启用由设置项 sensitiveAutoExpire 控制，
+/// 间隔本身不是设置项 —— 密钥在历史里多躺一分钟都算久
 const SENSITIVE_TTL_MS: i64 = 60_000;
 
 /// 锁中毒在别处（lib.rs 的数据库连接）按「报告但别崩」处理，这里同理。
@@ -329,8 +326,7 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
                 // 后台任务删除。暴露窗口从「永久」收敛到 60 秒，
                 // 而密钥本来就已经在系统剪贴板里躺着了
                 let sensitive = crate::sensitive::scan(&text).is_some();
-                let expires_at = sensitive.then(|| repo::now_ms() + SENSITIVE_TTL_MS);
-                if let Some(item) = capture(&app, &text, sensitive, expires_at) {
+                if let Some(item) = capture(&app, &text, sensitive) {
                     let _ = tauri::Emitter::emit(&app, "clipboard://changed", item);
                 }
             }
@@ -338,18 +334,27 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
         .expect("起剪贴板监听线程失败");
 }
 
-/// 入库一条新内容。返回它，供前端增量刷新
-fn capture(
-    app: &tauri::AppHandle,
-    text: &str,
-    sensitive: bool,
-    expires_at: Option<i64>,
-) -> Option<repo::ClipboardItem> {
+/// 入库一条新内容。返回它，供前端增量刷新。
+///
+/// `sensitive` 由调用方扫好传进来（两个平台的监听路径共用这里，
+/// 扫描点必须在入库之前）；到期时间与清理参数在这里按设置快照定
+fn capture(app: &tauri::AppHandle, text: &str, sensitive: bool) -> Option<repo::ClipboardItem> {
     // 取前台应用必须在锁外。系统调用一旦变慢（权限弹窗、进程起不来），
     // 就会把整把数据库锁一起拖住，界面和别的命令全卡死
     // 前台应用是自己就记 null。调色板显示时 DevClip 是前台窗口，
     // 记下来会让每条历史都写着「DevClip」，一个有用的字段就废了
     let source_app = frontmost_app().filter(|a| a != &app.config().identifier.to_string());
+    // 设置快照也是「取完再碰数据库锁」：Mutex 上不做任何慢操作
+    let (max_items, retention_ms, expires_at) = {
+        let rt = app.state::<crate::RuntimeSettings>();
+        let s = crate::unpoison(&rt.0);
+        let ea = if sensitive && s.sensitive_auto_expire {
+            Some(repo::now_ms() + SENSITIVE_TTL_MS)
+        } else {
+            None
+        };
+        (s.max_items, s.retention_days * 86_400_000, ea)
+    };
     let state = app.state::<crate::Db>();
     let conn = lock(&state.conn);
     let (id, created) = repo::upsert(
@@ -367,7 +372,7 @@ fn capture(
     if created {
         // 只在真的新增时清理。重复内容只涨计数，
         // 每次都跑一遍 DELETE 是白费
-        let _ = repo::prune(&conn, MAX_ITEMS, Some(RETENTION_DAYS * 86_400_000));
+        let _ = repo::prune(&conn, max_items, Some(retention_ms));
     }
     repo::get(&conn, id).ok().flatten()
 }
@@ -407,7 +412,10 @@ fn spawn_linux(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
         if sw.take(&text) {
             return;
         }
-        if let Some(item) = capture(&handle, &text) {
+        // 敏感扫描与 macOS 同一套规则。早先 Linux 路径漏了这一步，
+        // 密钥在 Linux 上是直接入库的 —— 那正是这个功能最该管住的场景
+        let sensitive = crate::sensitive::scan(&text).is_some();
+        if let Some(item) = capture(&handle, &text, sensitive) {
             let _ = tauri::Emitter::emit(&handle, "clipboard://changed", item);
         }
     });

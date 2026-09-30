@@ -54,7 +54,7 @@ pub struct Db {
     pub conn: std::sync::Mutex<rusqlite::Connection>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub hotkey: String,
@@ -94,12 +94,64 @@ impl ActionResult {
 
 fn default_settings() -> Settings {
     Settings {
-        hotkey: "Alt+Shift+V".into(),
+        // 快捷键的默认值是分平台的（docs/05：一个值套三个平台
+        // 必有一个撞车），从 hotkey.rs 取，别在这里再写一份
+        hotkey: hotkey::default_hotkey(hotkey::Platform::current()).to_string(),
         max_items: 1000,
         retention_days: 30,
         max_image_bytes: 10 * 1024 * 1024,
         theme: "dark".into(),
         sensitive_auto_expire: true,
+    }
+}
+
+/// 设置的运行时快照。启动时从盘上读一次，之后命令只改这里；
+/// 落盘只是快照的投影。监听线程与命令都要读它，
+/// 单一事实来源免得两处各读各的文件
+pub struct RuntimeSettings(std::sync::Mutex<Settings>);
+
+impl RuntimeSettings {
+    fn get(&self) -> Settings {
+        unpoison(&self.0).clone()
+    }
+    fn set(&self, s: Settings) {
+        *unpoison(&self.0) = s;
+    }
+}
+
+/// settings::Stored（可缺字段）→ 完整 Settings，缺的用默认值补
+fn stored_to_settings(s: settings::Stored) -> Settings {
+    let d = default_settings();
+    Settings {
+        hotkey: s.hotkey.unwrap_or(d.hotkey),
+        max_items: s.max_items.unwrap_or(d.max_items),
+        retention_days: s.retention_days.unwrap_or(d.retention_days),
+        max_image_bytes: s.max_image_bytes.unwrap_or(d.max_image_bytes),
+        theme: s.theme.unwrap_or(d.theme),
+        sensitive_auto_expire: s.sensitive_auto_expire.unwrap_or(d.sensitive_auto_expire),
+    }
+}
+
+fn settings_to_stored(s: &Settings) -> settings::Stored {
+    settings::Stored {
+        hotkey: Some(s.hotkey.clone()),
+        max_items: Some(s.max_items),
+        retention_days: Some(s.retention_days),
+        max_image_bytes: Some(s.max_image_bytes),
+        theme: Some(s.theme.clone()),
+        sensitive_auto_expire: Some(s.sensitive_auto_expire),
+    }
+}
+
+/// 前端 patch 过来的界限。越界的值收进来而不是报错 ——
+/// 设置页的控件本身有范围，这里只是防手改配置文件之外的极端值。
+/// retention_days = 0 是合法语义（立即过期），不能当无效值挡掉
+fn clamp_settings(s: &mut Settings) {
+    s.max_items = s.max_items.clamp(10, 100_000);
+    s.retention_days = s.retention_days.clamp(0, 3650);
+    s.max_image_bytes = s.max_image_bytes.clamp(64 * 1024, 100 * 1024 * 1024);
+    if !matches!(s.theme.as_str(), "dark" | "light" | "system") {
+        s.theme = "dark".into();
     }
 }
 
@@ -361,15 +413,63 @@ fn human(bytes: usize) -> String {
     }
 }
 
+/// 读设置。返回快照 —— 盘上的文件只在启动时读一次
 #[tauri::command]
-fn get_settings() -> Settings {
-    default_settings()
+fn get_settings(rt: State<'_, RuntimeSettings>) -> Settings {
+    rt.get()
 }
 
+/// set_settings 收到的部分 patch。TS 侧是 Partial<Settings>
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsPatch {
+    hotkey: Option<String>,
+    max_items: Option<i64>,
+    retention_days: Option<i64>,
+    max_image_bytes: Option<i64>,
+    theme: Option<String>,
+    sensitive_auto_expire: Option<bool>,
+}
+
+/// 合并 patch 并落盘，返回合并后的完整设置。
+///
+/// 快捷键走 apply_hotkey（要真的注册），其余字段纯数据。
+/// hotkey 注册失败则整体失败 —— 一半生效一半没生效的设置
+/// 比全都失败更难排查
 #[tauri::command]
-fn set_settings(_patch: serde_json::Value) -> Settings {
-    // TODO: 阶段 7 合并 patch 并持久化
-    default_settings()
+fn set_settings(
+    app: tauri::AppHandle,
+    rt: State<'_, RuntimeSettings>,
+    patch: SettingsPatch,
+) -> Result<Settings, String> {
+    let mut next = rt.get();
+    if let Some(hk) = &patch.hotkey {
+        apply_hotkey(&app, hk)?;
+        next.hotkey = hk.to_string();
+    }
+    if let Some(v) = patch.max_items {
+        next.max_items = v;
+    }
+    if let Some(v) = patch.retention_days {
+        next.retention_days = v;
+    }
+    if let Some(v) = patch.max_image_bytes {
+        next.max_image_bytes = v;
+    }
+    if let Some(v) = patch.theme {
+        next.theme = v;
+    }
+    if let Some(v) = patch.sensitive_auto_expire {
+        next.sensitive_auto_expire = v;
+    }
+    clamp_settings(&mut next);
+
+    rt.set(next.clone());
+    if let Err(e) = settings::save(&settings_path(&app), &settings_to_stored(&next)) {
+        // 本次已生效，只是下次启动会回到旧值。别让用户重填一遍
+        eprintln!("设置没存住，重启后会回到旧值: {e}");
+    }
+    Ok(next)
 }
 
 // ── 过期清理后台任务 ─────────────────────────────────────────────
@@ -508,15 +608,12 @@ fn settings_path(app: &tauri::AppHandle) -> std::path::PathBuf {
 /// 多半是被别的应用抢占了或系统没给权限。这时用户如果还进不来，
 /// 就只剩杀进程重装，比多弹一个窗口糟糕得多
 ///
-/// 优先用用户上次设过的；没设过才用平台默认值。
+/// 快捷键值从运行时快照读（setup 里快照先于这里就绪）。
 /// 早先每次启动都用默认值，用户改了也没用 —— 文档里那一项
 /// 写得再清楚也没意义
 fn register_hotkey(app: &tauri::AppHandle) {
     let platform = hotkey::Platform::current();
-    let stored = settings::load(&settings_path(app));
-    let spec = stored
-        .hotkey
-        .unwrap_or_else(|| hotkey::default_hotkey(platform).to_string());
+    let spec = app.state::<RuntimeSettings>().get().hotkey;
 
     let Ok(shortcut) = spec.parse::<Shortcut>() else {
         eprintln!("快捷键 {spec} 无法解析，窗口改为常驻显示");
@@ -582,12 +679,13 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 改快捷键。返回规范化后的值。
+/// 注册一个新快捷键（先注销旧的）。
 ///
+/// 只管注册，不管持久化 —— 落盘由调用方随其他字段一起做，
+/// 免得 set_hotkey 和 set_settings 各写一份文件。返回规范化后的值。
 /// 前端会直接显示 Err 的内容，所以文案要能照着做 ——
 /// 尤其是「已被占用」和「格式不对」必须分开说
-#[tauri::command]
-fn set_hotkey(app: tauri::AppHandle, accel: String) -> Result<String, String> {
+fn apply_hotkey(app: &tauri::AppHandle, accel: &str) -> Result<String, String> {
     let platform = hotkey::Platform::current();
     let shortcut: Shortcut = accel
         .parse()
@@ -598,34 +696,36 @@ fn set_hotkey(app: tauri::AppHandle, accel: String) -> Result<String, String> {
     let gs = app.global_shortcut();
     // 先注销旧的再注册新的。不注销的话平台会报「已被占用」，
     // 而占用者其实是我们自己上一个组合
-    let stored = settings::load(&settings_path(&app));
-    if let Some(old) = stored.hotkey.as_ref() {
-        if let Ok(old_hk) = old.parse::<Shortcut>() {
-            let _ = gs.unregister(old_hk);
-        }
+    let old = app.state::<RuntimeSettings>().get().hotkey;
+    if let Ok(old_hk) = old.parse::<Shortcut>() {
+        let _ = gs.unregister(old_hk);
     }
 
     gs.register(shortcut)
         .map_err(|e| format!("快捷键注册失败：{e}"))?;
+    Ok(shortcut.to_string())
+}
 
-    let canon = shortcut.to_string();
-    let next = settings::Stored {
-        hotkey: Some(canon.clone()),
-    };
-    // 存失败不影响本次注册，只是下次启动会回到默认值
-    if let Err(e) = settings::save(&settings_path(&app), &next) {
-        eprintln!("快捷键没存住，下次启动会回到默认值: {e}");
+/// 改快捷键。返回规范化后的值
+#[tauri::command]
+fn set_hotkey(app: tauri::AppHandle, accel: String) -> Result<String, String> {
+    let canon = apply_hotkey(&app, &accel)?;
+
+    let rt = app.state::<RuntimeSettings>();
+    let mut s = rt.get();
+    s.hotkey = canon.clone();
+    rt.set(s.clone());
+    // 存失败不影响本次注册，只是下次启动会回到旧值
+    if let Err(e) = settings::save(&settings_path(&app), &settings_to_stored(&s)) {
+        eprintln!("快捷键没存住，下次启动会回到旧值: {e}");
     }
     Ok(canon)
 }
 
-/// 读当前快捷键。没设过就返回平台默认值
+/// 读当前快捷键。快照里已经是「设过的或平台默认值」
 #[tauri::command]
-fn get_hotkey(app: tauri::AppHandle) -> String {
-    let platform = hotkey::Platform::current();
-    settings::load(&settings_path(&app))
-        .hotkey
-        .unwrap_or_else(|| hotkey::default_hotkey(platform).to_string())
+fn get_hotkey(rt: State<'_, RuntimeSettings>) -> String {
+    rt.get().hotkey
 }
 
 // ── 入口 ─────────────────────────────────────────────────────────
@@ -661,6 +761,9 @@ pub fn run() {
                 conn: std::sync::Mutex::new(conn),
             });
             app.manage(RestoreTarget::default());
+            // 快照必须先于 register_hotkey 就绪：它要从这里读快捷键
+            let settings_full = stored_to_settings(settings::load(&settings_path(app.handle())));
+            app.manage(RuntimeSettings(std::sync::Mutex::new(settings_full)));
 
             let sw = Arc::new(SelfWrite::default());
             app.manage(sw.clone());
