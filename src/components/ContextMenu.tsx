@@ -77,11 +77,11 @@ export function ContextMenu() {
       style={{ left: pos.x, top: pos.y }}
       // 右键打开时，浏览器自带的菜单要挡掉
       onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-50 min-w-[176px] rounded-lg border border-white/10 bg-zinc-900/95 py-1 shadow-xl shadow-black/60 backdrop-blur-xl"
+      className="fixed z-50 min-w-[176px] rounded-lg border border-line bg-panel/95 py-1 shadow-xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
     >
       {entries.map((e, i) =>
         e.kind === "sep" ? (
-          <div key={i} className="my-1 h-px bg-white/10" />
+          <div key={i} className="my-1 h-px bg-line" />
         ) : (
           <button
             key={i}
@@ -93,12 +93,12 @@ export function ContextMenu() {
             }}
             className={`flex w-full items-center gap-6 px-3 py-1.5 text-left text-[13px] transition-colors ${
               e.danger
-                ? "text-rose-300 hover:bg-rose-500/15"
-                : "text-zinc-200 hover:bg-white/[0.07]"
+                ? "text-rose-300 hover:bg-rose-500/15 light:text-rose-700"
+                : "text-fg-strong hover:bg-active"
             }`}
           >
             <span className="flex-1">{e.label}</span>
-            <span className="text-[11px] text-zinc-600">{e.hint}</span>
+            <span className="text-[11px] text-faint">{e.hint}</span>
           </button>
         ),
       )}

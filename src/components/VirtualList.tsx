@@ -136,10 +136,10 @@ export function VirtualList() {
       className="max-h-[min(420px,50vh)] overflow-y-auto overscroll-contain p-1.5"
     >
       {loading ? (
-        <div className="px-3 py-10 text-center text-sm text-zinc-600">加载中…</div>
+        <div className="px-3 py-10 text-center text-sm text-faint">加载中…</div>
       ) : (
         <>
-          <Command.Empty className="px-3 py-10 text-center text-sm text-zinc-600">
+          <Command.Empty className="px-3 py-10 text-center text-sm text-faint">
             没有匹配「{query}」的记录
           </Command.Empty>
           {rows}

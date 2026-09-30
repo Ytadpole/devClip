@@ -26,15 +26,15 @@ export function ItemRow({ item, active, onSelect, onToggleFavorite, onContextMen
       // h-[62px] 与 VirtualList 的 ROW_H 是同一个数，改一处要改两处
       className={`group relative flex h-[62px] cursor-pointer items-start gap-3 border-l-2 px-3 py-2.5 transition-colors ${
         active
-          ? "border-sky-400 bg-white/[0.07]"
-          : "border-transparent hover:bg-white/[0.035]"
+          ? "border-sky-400 bg-active light:border-sky-700"
+          : "border-transparent hover:bg-hover"
       }`}
     >
       {thumb ? (
         <img
           src={thumb}
           alt=""
-          className="mt-px h-9 w-9 shrink-0 rounded border border-white/10 object-cover"
+          className="mt-px h-9 w-9 shrink-0 rounded border border-line object-cover"
         />
       ) : (
         <TypeBadge type={item.contentType} className="mt-0.5" />
@@ -43,32 +43,35 @@ export function ItemRow({ item, active, onSelect, onToggleFavorite, onContextMen
       <div className="min-w-0 flex-1">
         <div
           className={`truncate font-mono text-[13px] leading-5 ${
-            active ? "text-zinc-100" : "text-zinc-300"
+            active ? "text-fg-strong" : "text-fg"
           }`}
         >
           {oneLine(item.content, 200)}
         </div>
 
-        <div className="mt-1 flex items-center gap-2 text-[11px] leading-4 text-zinc-500">
+        <div className="mt-1 flex items-center gap-2 text-[11px] leading-4 text-muted">
           <span>{relTime(item.lastCopiedAt)}</span>
           {item.sourceApp && (
             <>
-              <span className="text-zinc-700">·</span>
+              <span className="text-ghost">·</span>
               <span className="truncate">{item.sourceApp}</span>
             </>
           )}
           {item.copyCount > 1 && (
             <>
-              <span className="text-zinc-700">·</span>
+              <span className="text-ghost">·</span>
               <span>×{item.copyCount}</span>
             </>
           )}
-          <span className="text-zinc-700">·</span>
+          <span className="text-ghost">·</span>
           <span>{bytes(item.byteSize)}</span>
           {item.sensitive && (
             <>
-              <span className="text-zinc-700">·</span>
-              <span className="text-amber-500/90" title="疑似敏感信息（密钥 / token）">
+              <span className="text-ghost">·</span>
+              <span
+                className="text-amber-500/90 light:text-amber-700"
+                title="疑似敏感信息（密钥 / token）"
+              >
                 🔒 敏感
               </span>
             </>
@@ -82,7 +85,7 @@ export function ItemRow({ item, active, onSelect, onToggleFavorite, onContextMen
           e.stopPropagation();
           onToggleFavorite(item.id);
         }}
-        className="mt-0.5 shrink-0 rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-amber-300"
+        className="mt-0.5 shrink-0 rounded p-1 text-faint transition-colors hover:bg-hover hover:text-amber-300 light:hover:text-amber-700"
         aria-label={item.favorite ? "取消收藏" : "收藏"}
       >
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill={item.favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">

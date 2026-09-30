@@ -111,7 +111,7 @@ export function Palette() {
   const filtered = s.types.length > 0 || s.favoriteOnly || s.sensitive;
 
   return (
-    <div className="flex min-h-screen justify-center bg-zinc-950 pt-[11vh] text-zinc-300 antialiased">
+    <div className="flex min-h-screen justify-center bg-canvas pt-[11vh] text-fg antialiased">
       <div className="w-full max-w-[680px] px-4">
         {s.view === "settings" ? (
           <SettingsPanel />
@@ -125,11 +125,11 @@ export function Palette() {
             const i = s.items.findIndex((x) => String(x.id) === v);
             if (i >= 0) useStore.getState().select(i);
           }}
-          className="overflow-hidden rounded-xl border border-white/10 bg-zinc-900/80 shadow-2xl shadow-black/60 backdrop-blur-xl"
+          className="overflow-hidden rounded-xl border border-line bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
           {/* 搜索框 */}
-          <div className="flex items-center gap-3 border-b border-white/10 px-4">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-zinc-600">
+          <div className="flex items-center gap-3 border-b border-line px-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-faint">
               <circle cx="11" cy="11" r="7" />
               <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
             </svg>
@@ -139,13 +139,13 @@ export function Palette() {
               onValueChange={s.setQuery}
               autoFocus
               placeholder="搜索历史记录…（⌘K 聚焦）"
-              className="h-14 flex-1 bg-transparent text-[15px] text-zinc-100 outline-none placeholder:text-zinc-600"
+              className="h-14 flex-1 bg-transparent text-[15px] text-fg-strong outline-none placeholder:text-faint"
             />
             {s.query && (
               <button
                 type="button"
                 onClick={() => s.setQuery("")}
-                className="rounded px-1.5 text-xs text-zinc-600 hover:text-zinc-300"
+                className="rounded px-1.5 text-xs text-faint transition-colors hover:text-fg"
               >
                 清除
               </button>
@@ -153,14 +153,14 @@ export function Palette() {
           </div>
 
           {/* 类型筛选 */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-white/5 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-3 py-2">
             <button
               type="button"
               onClick={s.toggleFavoriteOnly}
               className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
                 s.favoriteOnly
-                  ? "bg-amber-400/20 text-amber-300"
-                  : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                  ? "bg-amber-400/20 text-amber-300 light:text-amber-700"
+                  : "text-muted hover:bg-hover hover:text-fg"
               }`}
             >
               ⭐ 仅收藏
@@ -171,13 +171,13 @@ export function Palette() {
               title="展开疑似密钥 / token 的分组"
               className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
                 s.sensitive
-                  ? "bg-rose-400/20 text-rose-300"
-                  : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                  ? "bg-rose-400/20 text-rose-300 light:text-rose-700"
+                  : "text-muted hover:bg-hover hover:text-fg"
               }`}
             >
               🔒 含敏感
             </button>
-            <span className="mx-0.5 h-3.5 w-px bg-white/10" />
+            <span className="mx-0.5 h-3.5 w-px bg-line" />
             {QUICK_TYPES.map((t) => (
               <button
                 key={t}
@@ -185,19 +185,19 @@ export function Palette() {
                 onClick={() => s.toggleType(t)}
                 className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
                   s.types.includes(t)
-                    ? "bg-sky-400/20 text-sky-300"
-                    : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                    ? "bg-sky-400/20 text-sky-300 light:text-sky-700"
+                    : "text-muted hover:bg-hover hover:text-fg"
                 }`}
               >
                 {t}
               </button>
             ))}
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-zinc-600">
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-faint">
               {filtered && (
                 <button
                   type="button"
                   onClick={s.clearFilters}
-                  className="rounded px-1.5 py-0.5 transition-colors hover:bg-white/5 hover:text-zinc-300"
+                  className="rounded px-1.5 py-0.5 transition-colors hover:bg-hover hover:text-fg"
                 >
                   清除筛选
                 </button>
@@ -206,7 +206,7 @@ export function Palette() {
                 type="button"
                 onClick={s.openSettings}
                 title="设置"
-                className="rounded px-1.5 py-0.5 transition-colors hover:bg-white/5 hover:text-zinc-300"
+                className="rounded px-1.5 py-0.5 transition-colors hover:bg-hover hover:text-fg"
               >
                 ⚙ 设置
               </button>
@@ -224,9 +224,9 @@ export function Palette() {
           {selected && s.actions.length > 0 && (
             <div
               data-toolbox=""
-              className="flex items-center gap-1.5 border-t border-white/10 px-3 py-2"
+              className="flex items-center gap-1.5 border-t border-line px-3 py-2"
             >
-              <span className="text-[11px] text-zinc-600">工具箱</span>
+              <span className="text-[11px] text-faint">工具箱</span>
               {s.actions.map((a) => (
                 <button
                   key={a.id}
@@ -237,25 +237,26 @@ export function Palette() {
                   // 悬停是唯一不破坏布局的位置
                   title={a.hint}
                   onClick={() => void s.runAction(selected, a.id)}
-                  className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-300 transition-colors hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-sky-200"
+                  className="rounded-md border border-line bg-field px-2 py-0.5 text-[11px] text-fg transition-colors hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-sky-200 light:hover:text-sky-700"
                 >
                   {a.label}
                 </button>
               ))}
-              <span className="ml-auto text-[11px] text-zinc-700">结果写入剪贴板</span>
+              <span className="ml-auto text-[11px] text-faint">结果写入剪贴板</span>
             </div>
           )}
 
           {/* 底部：状态 / 快捷键提示 */}
-          <div className="flex items-center gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-zinc-600">
+          <div className="flex items-center gap-3 border-t border-line px-3 py-2 text-[11px] text-faint">
             {s.status ? (
               <span
+                data-status={s.status.kind}
                 className={
                   s.status.kind === "ok"
-                    ? "text-emerald-400"
+                    ? "text-emerald-400 light:text-emerald-700"
                     : // warn 与 err 同色但语义不同：降级不是故障，
                       // 统一用琥珀色表示「没按预期走」，不制造恐慌
-                      "text-amber-400"
+                      "text-amber-400 light:text-amber-700"
                 }
               >
                 {s.status.text}
@@ -269,7 +270,7 @@ export function Palette() {
                 <span>右键 更多</span>
                 <span className="ml-auto flex items-center gap-2">
                   {selected && <TypeBadge type={selected.contentType} />}
-                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-zinc-500">
+                  <span className="rounded bg-field px-1.5 py-0.5 text-muted">
                     {backendLabel} 后端
                   </span>
                 </span>
