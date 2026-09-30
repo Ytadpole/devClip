@@ -28,8 +28,11 @@ export default defineConfig({
 
   // 跑测试前得先有 dev server 在听。本地已经开着 pnpm dev 时直接复用 ——
   // 1420 是 strictPort，抢占会直接失败，不会自动退到别的端口。
+  // 命令直指 vite 的 node 入口而不是 pnpm dev：Playwright 收尾时只对
+  // 直接子进程发 SIGTERM，pnpm/sh 的包装层会把它吞掉，vite 就永远
+  // 不退出，测试全过之后整个进程挂死（CI 上实测 38 分钟无输出）。
   webServer: {
-    command: "pnpm dev",
+    command: "node node_modules/vite/bin/vite.js",
     url: URL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
