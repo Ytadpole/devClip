@@ -1028,3 +1028,36 @@ CSS + React，三个平台行为一致；CI 里 e2e 也只在 Linux 跑（macOS
 想起来这次只在 Linux + Chromium 上看过。**宁可标成推断也不写成
 「已验证」** —— 这份文件的价值全在可信，掺一条没做过的验收，
 以后就分不清哪条是真验过的了。
+
+---
+
+## 8dd5e3e · 2026-10-01 · docs: 补记两条缺失的 DEVLOG
+
+纯补录：把 afbb49a 与 6eefa25 两条的记录写进本文件，本身没有
+代码改动，不再展开。
+
+---
+
+## 072b5e6 · 2026-10-01 · fix: 补齐 linux.rs 的 is_repeat 单参数调用
+
+61ff541 把 `is_repeat` 的签名从 `(text, Instant)` 收成 `(text)`，
+`clipboard.rs` 的调用点与测试都改了，唯独 `linux.rs` 那处漏网 ——
+从那个提交起 HEAD 编译不过。CI 又因下一条的问题从未绿过，所以没人
+报警。修复当时已躺在工作区没提交，盘点进度时才被捞起：`cargo check`
+/ fmt / clippy 全过后落库。
+
+---
+
+## aab4a6d · 2026-10-01 · fix: ci 先装 pnpm 再配 setup-node 缓存
+
+setup-node 的 `cache: pnpm` 要先跑 `pnpm store path` 算缓存目录，
+执行时必须已有 pnpm 可执行文件；而 workflow 里 `corepack enable`
+排在 setup-node **之后**，于是四个 job 从仓库第一次跑 CI 起就全挂
+在同一行，九次全红、从未绿过 —— 也因此上一条的编译错误一直没人发现。
+
+改用 `pnpm/action-setup@v4`（读 `package.json` 的 `packageManager`
+字段装 pnpm@12.6.0）放在 setup-node 之前，删掉两处 `corepack enable`。
+
+诊断方式：日志下载要 admin 权限（匿名 403），只靠 jobs API 看到
+四个 job 全部挂在 setup-node 这一步，结合 workflow 顺序推到根因；
+若推送后仍红，`gh auth login` 之后拉日志再看。
