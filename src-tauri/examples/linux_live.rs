@@ -10,14 +10,19 @@
 //! 所以在同一个进程里「模拟复制」根本不会被 owner 轮询看见。
 //! 那个坑我已经踩过一次了。
 
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(target_os = "linux")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
 use std::time::{Duration, Instant};
 
 /// 抓到的一条：(经过的秒数, 来源窗口名, 内容)
+#[cfg(target_os = "linux")]
 type Capture = (f64, Option<String>, String);
 
 /// 用独立进程模拟「用户在别的程序里复制」。子进程退出即模拟源程序关闭
+#[cfg(target_os = "linux")]
 fn copy_in_separate_process(text: &str) -> std::io::Result<()> {
     let mut cmd = std::process::Command::new(std::env::current_exe()?);
     cmd.arg("--copy-as-source")
@@ -28,6 +33,7 @@ fn copy_in_separate_process(text: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn run_as_source(text: &str) -> ! {
     use arboard::SetExtLinux;
     let mut cb = arboard::Clipboard::new().expect("建剪贴板连接");
@@ -38,6 +44,7 @@ fn run_as_source(text: &str) -> ! {
     std::process::exit(0);
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|a| a == "--copy-as-source") {
         let text = std::env::args().nth(2).unwrap_or_default();
@@ -117,3 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::sleep(Duration::from_secs(1));
     Ok(())
 }
+
+/// 非 Linux 目标上整文件失效，但 example 必须有 main 才能过编译
+#[cfg(not(target_os = "linux"))]
+fn main() {}

@@ -8,24 +8,31 @@
 //! - `cargo run --example x11probe own "文本"`   模拟别的程序复制（保持进程存活）
 //! - `cargo run --example x11probe watch 20`     观察 owner 变化
 
+#[cfg(target_os = "linux")]
 use arboard::{Clipboard, SetExtLinux};
+#[cfg(target_os = "linux")]
 use x11rb::connection::Connection;
+#[cfg(target_os = "linux")]
 use x11rb::protocol::xproto::{Atom, ConnectionExt as XProtoExt, Window};
+#[cfg(target_os = "linux")]
 use x11rb::rust_connection::RustConnection;
 
 /// 返回连接与默认 screen 序号。x11rb 的 connect 一次给两个东西
+#[cfg(target_os = "linux")]
 fn conn() -> Result<(RustConnection, usize), Box<dyn std::error::Error>> {
     RustConnection::connect(None).map_err(Into::into)
 }
 
 /// CLIPBOARD 不是 X 协议预定义的原子（PRIMARY=1、SECONDARY=2 才是），
 /// 必须按名向服务器问，所以写不成 `AtomEnum::CLIPBOARD`
+#[cfg(target_os = "linux")]
 fn clipboard_atom(c: &RustConnection) -> Result<Atom, Box<dyn std::error::Error>> {
     Ok(c.intern_atom(false, b"CLIPBOARD")?.reply()?.atom)
 }
 
 /// 问服务器「现在谁持有 CLIPBOARD」。返回 0 表示无人持有
 /// —— 剪贴板被清空，或上一个持有者进程刚退出
+#[cfg(target_os = "linux")]
 fn owner_of(c: &RustConnection, sel: Atom) -> Window {
     let cookie = match c.get_selection_owner(sel) {
         Ok(c) => c,
@@ -34,6 +41,7 @@ fn owner_of(c: &RustConnection, sel: Atom) -> Window {
     cookie.reply().map(|r| r.owner).unwrap_or(0)
 }
 
+#[cfg(target_os = "linux")]
 fn intern(c: &RustConnection, name: &str) -> Atom {
     match c.intern_atom(false, name.as_bytes()) {
         Ok(cookie) => cookie.reply().map(|r| r.atom).unwrap_or(0),
@@ -42,6 +50,7 @@ fn intern(c: &RustConnection, name: &str) -> Atom {
 }
 
 /// 读窗口名字，用来在日志里认出「谁复制了」
+#[cfg(target_os = "linux")]
 fn window_name(c: &RustConnection, w: Window) -> String {
     if w == 0 {
         return "<无人持有>".into();
@@ -72,6 +81,7 @@ fn window_name(c: &RustConnection, w: Window) -> String {
     format!("0x{w:x}")
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (c, screen) = conn()?;
     let root = c.setup().roots[screen].root;
@@ -174,3 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+/// 非 Linux 目标上整文件失效，但 example 必须有 main 才能过编译
+#[cfg(not(target_os = "linux"))]
+fn main() {}
