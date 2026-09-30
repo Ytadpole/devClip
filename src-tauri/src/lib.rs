@@ -587,6 +587,11 @@ fn is_own_window(app: &tauri::AppHandle, target: &str) -> bool {
 
 /// 告诉前端「这台机器不能监听」，界面据此显示原因而不是
 /// 假装在正常工作
+///
+/// 唯一调用点在 Linux 的监听路径里（X11 需要常驻持有者），所以
+/// 跟着同一个 cfg 走 —— 否则 macOS / Windows 上它就是死代码，
+/// 而 CI 的 clippy 带 `-D warnings`
+#[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) fn emit_monitor_unavailable(app: &tauri::AppHandle, reason: String) {
     let _ = tauri::Emitter::emit(
         app,

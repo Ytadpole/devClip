@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_segment() {
-        let e = decode_payload(&format!("eyJhbGciOiJub25lIn0..sig")).unwrap_err();
+        let e = decode_payload("eyJhbGciOiJub25lIn0..sig").unwrap_err();
         assert!(e.contains("空的"), "{e}");
     }
 

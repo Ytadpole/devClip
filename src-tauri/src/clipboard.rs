@@ -9,7 +9,7 @@
 
 use arboard::Clipboard;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::Manager;
 
 /// Linux 实现。与本文件里的 macOS 路径完全独立 ——
@@ -98,40 +98,35 @@ impl SelfWrite {
 /// 会被误判成重复，`copy_count` 永远停在 1。而「从历史里复制
 /// 一条命令、改一改、再复制一次」恰恰是常见操作。
 ///
-/// 所以要带时刻：**内容相同且时间在窗口内**才算重复。
-#[derive(Default)]
-pub struct Seen(Mutex<Option<(String, Instant)>>);
-
-/// 重复判定窗口。
+/// 早先的修法是「内容相同**且**在时间窗口内」才算重复
+/// （窗口比 [POLL] 宽，800ms）。这版在真机上被推翻：轮询一圈
+/// 不止 `POLL` 那么快 —— `read_text()` 与入库都要花时间，实测
+/// 周期能到 1 秒以上，窗口再宽也只是纸面成立。后果不是「多记
+/// 几条」，而是每轮都判成新内容，`copy_count` 被刷高，而
+/// `expires_at` 被一次次顺延，**敏感项永远不过期**。
 ///
-/// 必须大于 [POLL] 才挡得住「按住 Ctrl+C 不放」—— 那样每隔
-/// 一个轮询周期就会看到一次内容没变。取得比轮询稍宽是为了
-/// 留出抖动余量
-const DEDUPE_WINDOW: Duration = Duration::from_millis(800);
+/// 所以只比内容：剪贴板里没换过东西就是没有新的复制事件。
+/// 「隔一分钟又复制了同一段」这种确实区分不出来，代价只是
+/// `copy_count` 少加一次（那条记录本来就在历史里）；而中间
+/// 复制过别的东西再复制回来（先 a 后 b 再 a）照样算两次。
+#[derive(Default)]
+pub struct Seen(Mutex<Option<String>>);
 
 impl Seen {
-    /// 这段内容是刚见过的重复吗
+    /// 这段内容和上一次观察到的一样吗
     ///
-    /// 判为重复时**也要更新时间** —— 这是「静默期去抖」而不是
-    /// 「距上次入库」：按住 Ctrl+C 不放时每轮都观察一次，
-    /// 每次都把窗口往后推，于是一次都不会重复入库。
-    ///
-    /// 早先只在内容变化时更新，结果最快也是每 DEDUPE_WINDOW 记一次
-    /// （按住 10 秒把 copy_count 刷到 11）。那仍然是个 bug，
-    /// 只是不那么刺眼
-    pub fn is_repeat(&self, text: &str, now: Instant) -> bool {
+    /// 判为重复时**也要更新记录** —— 判据是「与上次观察相比
+    /// 有没有变」，而不是「与上次入库相比」
+    pub fn is_repeat(&self, text: &str) -> bool {
         let mut g = lock(&self.0);
-        let repeat = match g.as_ref() {
-            Some((prev, at)) if prev == text => now.duration_since(*at) < DEDUPE_WINDOW,
-            _ => false,
-        };
-        *g = Some((text.to_string(), now));
+        let repeat = g.as_deref() == Some(text);
+        *g = Some(text.to_string());
         repeat
     }
 
     /// 直接记为已见过，不做重复判定。启动时用来建立基准
     pub fn mark_as_seen(&self, text: &str) {
-        *lock(&self.0) = Some((text.to_string(), Instant::now()));
+        *lock(&self.0) = Some(text.to_string());
     }
 
     /// 剪贴板被清空或换成了图片。丢掉记录，
@@ -308,7 +303,7 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
                     seen.clear();
                     continue;
                 };
-                if seen.is_repeat(&text, Instant::now()) {
+                if seen.is_repeat(&text) {
                     continue;
                 }
                 if self_write.take(&text) {
@@ -449,17 +444,14 @@ mod tests {
         assert!(sw.take("hello"));
     }
 
-    /// 防回归：早先只比内容，导致「连续两次复制同一段」时
-    /// 第二次被当成重复，copy_count 永远停在 1。
-    /// 而「从历史复制一条命令、改一改、再复制一次」是常见操作
+    /// 中间复制过别的东西，再复制回来 —— 是两次真实的复制
     #[test]
-    fn recopying_the_same_text_later_is_not_a_repeat() {
+    fn same_text_after_intervening_content_is_new() {
         let s = Seen::default();
-        let t0 = Instant::now();
-        assert!(!s.is_repeat("foo", t0), "第一次不该算重复");
-        // 过了一分钟再复制同样内容 —— 是真实的第二次复制
-        let later = t0 + Duration::from_secs(60);
-        assert!(!s.is_repeat("foo", later), "隔了一分钟该算新的一次复制");
+        assert!(!s.is_repeat("a"));
+        assert!(!s.is_repeat("b"));
+        // 回到 a：剪贴板确实换过内容，这是新的一次复制
+        assert!(!s.is_repeat("a"));
     }
 
     /// 按住 Ctrl+C 不放：每隔一个轮询周期就看到一次内容没变。
@@ -467,68 +459,48 @@ mod tests {
     #[test]
     fn held_down_key_does_not_inflate_count() {
         let s = Seen::default();
-        let t0 = Instant::now();
-        assert!(!s.is_repeat("x", t0));
+        assert!(!s.is_repeat("x"));
         for n in 1..=20 {
-            let at = t0 + Duration::from_millis(POLL.as_millis() as u64 * n);
+            assert!(s.is_repeat("x"), "第 {n} 轮不该被当成新内容");
+        }
+    }
+
+    /// 防回归（真机实测）：轮询一圈不止 POLL 那么快，`read_text()`
+    /// 与入库都要花时间，实测周期能到 1 秒以上。早先的「时间窗口」
+    /// 去重在这个周期下每轮都判成新内容，`expires_at` 被一次次
+    /// 顺延，敏感项永远不过期。这里把观察间隔拉到 1.5 秒 ——
+    /// 比任何曾经的窗口都宽 —— 仍必须判为重复
+    #[test]
+    fn slow_poll_loop_never_recaptures_unchanged_content() {
+        let s = Seen::default();
+        assert!(!s.is_repeat("sk_live_xxx"), "第一次是入库");
+        // 60 秒 TTL 期内大约 40 轮，够覆盖真机上观察到的现象
+        for n in 1..40 {
             assert!(
-                s.is_repeat("x", at),
-                "第 {n} 轮（+{}ms）不该被当成新内容",
-                POLL.as_millis() * n as u128
+                s.is_repeat("sk_live_xxx"),
+                "第 {n} 轮（真机实测约 1s 一轮）被当成了新复制，\
+                 expires_at 会被顺延到永不过期"
             );
         }
     }
 
-    /// 静默期去抖下，判定是相对于**上一次观察**，不是上一次入库。
-    /// 用户安静了超过一个窗口后再复制，该算新的一次
-    #[test]
-    fn quiet_period_expires_and_allows_recount() {
-        let s = Seen::default();
-        let t0 = Instant::now();
-        assert!(!s.is_repeat("x", t0));
-
-        // 连续观察，每次都推进窗口，于是一直被判重复
-        let mut at = t0;
-        for _ in 0..10 {
-            at += Duration::from_millis(400);
-            assert!(s.is_repeat("x", at), "连着观察不该算新内容");
-        }
-
-        // 安静够久之后再看，这次是真实的复制
-        assert!(
-            !s.is_repeat("x", at + DEDUPE_WINDOW),
-            "静默超过一个窗口后该重新计入"
-        );
-    }
-
-    /// 窗口必须宽于轮询间隔，否则按住不放会漏过去
-    #[test]
-    fn dedupe_window_exceeds_poll_interval() {
-        assert!(
-            DEDUPE_WINDOW > POLL,
-            "去重窗口 {DEDUPE_WINDOW:?} 必须宽于轮询间隔 {POLL:?}"
-        );
-    }
-
-    /// 换内容时立刻生效，不受上一条的时间影响
+    /// 换内容时立刻生效
     #[test]
     fn different_text_is_never_a_repeat() {
         let s = Seen::default();
-        let t0 = Instant::now();
-        assert!(!s.is_repeat("a", t0));
-        assert!(!s.is_repeat("b", t0));
-        assert!(!s.is_repeat("c", t0));
+        assert!(!s.is_repeat("a"));
+        assert!(!s.is_repeat("b"));
+        assert!(!s.is_repeat("c"));
     }
 
     /// 剪贴板被清空后，放回同样的文本算新内容
     #[test]
     fn clear_makes_the_same_text_new_again() {
         let s = Seen::default();
-        let t0 = Instant::now();
-        assert!(!s.is_repeat("a", t0));
-        assert!(s.is_repeat("a", t0 + Duration::from_millis(10)));
+        assert!(!s.is_repeat("a"));
+        assert!(s.is_repeat("a"));
         s.clear();
-        assert!(!s.is_repeat("a", t0 + Duration::from_millis(20)));
+        assert!(!s.is_repeat("a"));
     }
 
     #[test]
