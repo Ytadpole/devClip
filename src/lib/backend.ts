@@ -9,7 +9,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { ClipboardApi } from "./api";
 import { mockApi } from "./mock";
-import { tauriApi, tauriWindow } from "./tauri";
+import { tauriApi, tauriEvents, tauriWindow } from "./tauri";
 
 const impls: Record<string, ClipboardApi> = {
   mock: mockApi,
@@ -37,3 +37,10 @@ export const api: ClipboardApi = impls[backendName] ?? mockApi;
  */
 export const hideWindow: () => Promise<void> =
   backendName === "tauri" ? tauriWindow.hide : () => Promise.resolve();
+
+/**
+ * 订阅托盘菜单的「设置」。mock 后端没有托盘，永不触发。
+ * 与 hideWindow 同理：窗口层的事不进 ClipboardApi，分派留在这里
+ */
+export const onOpenSettings: (cb: () => void) => () => void =
+  backendName === "tauri" ? tauriEvents.onOpenSettings : () => () => {};

@@ -646,16 +646,23 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let show = MenuItem::with_id(app, "show", "显示调色板", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 DevClip", true, None::<&str>)?;
     // 菜单里明说退出意味着什么。X11 上用户不知道「退出 = 剪贴板
     // 里没被存下的东西会丢」，而这正是最该说清的一句
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &settings, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("devclip")
         .menu(&menu)
         .tooltip("DevClip — 剪贴板历史")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_palette(app),
+            // 设置页是前端的一份状态，托盘只负责把窗口带出来并
+            // 告诉前端「该切视图了」—— Rust 不直接操作 React
+            "settings" => {
+                show_palette(app);
+                let _ = tauri::Emitter::emit(app, "settings://open", ());
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -742,6 +749,13 @@ fn db_path(app: &tauri::AppHandle) -> std::path::PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 必须是第一个注册的插件：第二个实例的启动参数要尽早被拦下
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 这段跑在**已有**实例的进程里。用户再开一次 DevClip，
+            // 意图就是要看到它 —— 把调色板弹到前面即可，
+            // 两个实例各开一个数据库才真的是灾难
+            show_palette(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()

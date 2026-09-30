@@ -5,7 +5,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
-import { hideWindow } from "../lib/backend";
+import { hideWindow, onOpenSettings } from "../lib/backend";
 import type { ContentType } from "../lib/api";
 
 /** 筛选栏只展示高频类型，完整列表留给设置页 */
@@ -18,6 +18,9 @@ export function Palette() {
   useEffect(() => {
     void useStore.getState().init();
   }, []);
+
+  // 托盘菜单点了「设置」。取消订阅跟着组件卸载走
+  useEffect(() => onOpenSettings(() => useStore.getState().openSettings()), []);
 
   // 选中项的类型变了才重新拉工具箱动作。按 items 整个依赖会
   // 在任何一次列表刷新后都重拉一遍，没必要

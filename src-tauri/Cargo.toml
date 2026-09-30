@@ -35,6 +35,7 @@ arboard = "3.6.1"
 x11rb = { version = "0.13", features = ["xtest"] }
 tauri-plugin-global-shortcut = "2.4.0"
 tray-icon = "0.25.1"
+tauri-plugin-single-instance = "2.5.1"
 
 # 只在 macOS 上要：读前台应用、拉起目标应用。
 # 走 NSWorkspace 进程内调用，不起 osascript —— 详见 clipboard.rs

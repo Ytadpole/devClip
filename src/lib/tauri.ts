@@ -111,6 +111,29 @@ export const tauriWindow = {
 };
 
 /**
+ * 托盘菜单「设置」→ 打开设置页。
+ *
+ * Rust 不直接操作 React，只发事件；这里负责把它接成回调。
+ * 浏览器里没有事件通道，listen 会 reject，静默退化成「永不触发」
+ */
+export const tauriEvents = {
+  onOpenSettings(cb: () => void): () => void {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    listen("settings://open", () => cb())
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
+};
+
+/**
  * 阶段 4 起可用：把一条内容写进真实数据库。
  *
  * 不在 ClipboardApi 里 —— 那是历史记录的读写契约，而入库是
