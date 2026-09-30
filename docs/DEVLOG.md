@@ -1092,3 +1092,34 @@ seed.rs，还顺手下了「examples 三个平台都能编」的结论；两个�
 crate 级 `#![cfg]` 整文件门控会报 E0601（本地实验确认）。非 Linux
 路径的验证用「把条件临时翻成 plan9 本地模拟」跑过一遍，编译通过；
 那 11 条 unexpected_cfgs 警告是假目标值触发的 lint，属模拟 artifact。
+
+---
+
+## f9f12b7 · 2026-10-01 · docs: 补记 examples 门控 DEVLOG
+
+纯补录：把 0cf9f14 与 0f1d273 两条的记录写进本文件，本身没有代码
+改动，不再展开。
+
+---
+
+## 82a03bd · 2026-10-01 · fix: e2e 收尾挂死，dev server 直调 vite
+
+CI 首次跑到 e2e 就暴露了 596d8c0 记过的坑：ubuntu 的 e2e 步骤卡了
+37 分钟以上，日志却显示 **30 条测试 19 秒全部通过**，随后一片死寂，
+清理阶段残留 pnpm/node 孤儿。网络无罪——chromium 3 秒下完。
+
+**根因在信号传递。** Playwright 收尾只对**直接子进程**发 SIGTERM；
+`webServer.command` 写的 `pnpm dev` 中间隔着 pnpm/sh 两层包装，
+信号到不了 vite，vite 不退，playwright 便永远等它，`pnpm test`
+挂死。本机当时靠「复用已开的 dev server」绕过，CI 没有现成的
+server 可复用，坑第一次真暴露。
+
+修法：命令直指 `node node_modules/vite/bin/vite.js`，让直接子进程
+就是 vite 本体。本地 A/B：基线（`pnpm dev`）复现挂死，timeout 击杀
+exit 143；改后 30 条 53 秒全过、exit 0、1420 端口释放。
+
+**第一遍验证被自己污染，差点误判。** 基线被 timeout 击杀后留下的
+孤儿 vite 占着 1420，改完一跑 exit 0——但那走的是「复用既有
+server」路径，根本没验证收尾。杀掉残留重跑，拿到「自起 server +
+正常退出 + 端口释放」的干净证据才算数。杀进程时 timeout 只杀
+直接子进程、不追孤儿，和这次挂死是同一个机理。
