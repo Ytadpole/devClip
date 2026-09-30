@@ -64,12 +64,18 @@ export interface ToolboxAction {
   hint?: string;
 }
 
+/**
+ * 主题。`system` 跟随操作系统，但它不会原样传给 CSS ——
+ * 前端解析成 dark / light 之后才落到 <html> 上（见 lib/theme.ts）
+ */
+export type Theme = "dark" | "light" | "system";
+
 export interface Settings {
   hotkey: string;
   maxItems: number;
   retentionDays: number;
   maxImageBytes: number;
-  theme: "dark" | "light" | "system";
+  theme: Theme;
   sensitiveAutoExpire: boolean;
 }
 

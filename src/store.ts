@@ -8,7 +8,8 @@
 
 import { create } from "zustand";
 import { api, backendName } from "./lib/backend";
-import type { ActionResult, ClipboardItem, ContentType, Settings, ToolboxAction } from "./lib/api";
+import { apply, onSystemChange } from "./lib/theme";
+import type { ActionResult, ClipboardItem, ContentType, Settings, Theme, ToolboxAction } from "./lib/api";
 
 /** 搜索防抖。docs/06 定的是 80ms：再小则每个击键都打一次后端，
  * 再大则能感觉到「搜索不跟手」。 */
@@ -53,6 +54,12 @@ interface State {
   selected: number;
   status: Status | null;
   menu: MenuTarget | null;
+  /**
+   * 当前主题，**不是**从 settings 读出来的实时值。
+   * init 时拉一次，之后只跟着 setTheme 走：主题改了立刻生效，
+   * 没必要为此重开设置页
+   */
+  theme: Theme;
 
   init: () => Promise<void>;
   /** 变更之后重新拉取（收藏、粘贴、删除），尽量保住选中项 */
@@ -73,6 +80,8 @@ interface State {
   closeSettings: () => void;
   saveSettings: (patch: Partial<Settings>) => Promise<void>;
   saveHotkey: (accel: string) => Promise<void>;
+  loadTheme: () => Promise<void>;
+  setTheme: (t: Theme) => Promise<void>;
 
   toggleFavorite: (id: number) => Promise<void>;
   copy: (id: number) => Promise<void>;
@@ -157,6 +166,7 @@ export const useStore = create<State>((set, get) => ({
   selected: 0,
   status: null,
   menu: null,
+  theme: "dark",
 
   async init() {
     set({ loading: true });
@@ -169,6 +179,12 @@ export const useStore = create<State>((set, get) => ({
       // 成功了，只是没自动粘上，所以用 warn 语气而不是 err
       (text) => useStore.getState().say(text, "warn"),
     );
+    // 系统主题变了要重算。回调是幂等的，React 严格模式下多注册一个
+    // 监听也只是重复 apply 一次，所以不费劲去重
+    onSystemChange(() => apply(get().theme));
+    // 主题不能等用户打开设置页才生效，那意味着每次呼出调色板
+    // 都要先进设置页一趟
+    void get().loadTheme();
     try {
       await get().refresh();
     } finally {
@@ -280,6 +296,30 @@ export const useStore = create<State>((set, get) => ({
     } catch (e) {
       get().say(errorText(e) || "保存快捷键失败", "err");
     }
+  },
+
+  // ── 主题 ────────────────────────────────────────────────────
+  //
+  // 跟 saveHotkey 一样单独一个方法而不塞进设置草稿：改主题没有
+  // 「打一半」的状态，点一下就该立刻看见
+  async loadTheme() {
+    try {
+      const s = await api.getSettings();
+      set({ theme: s.theme });
+      apply(s.theme);
+    } catch (e) {
+      // 读不到就留在 CSS 的默认深色。这不是故障，不必惊动用户 ——
+      // 真想改随时能去设置页
+      get().say(errorText(e) || "读取主题失败", "warn");
+    }
+  },
+
+  async setTheme(t) {
+    set({ theme: t });
+    apply(t);
+    // 立刻落盘。跟着设置页的「保存设置」一起提交的话，用户点了
+    // 看见颜色变了却没存下来，下次启动又变回去
+    await attempt("保存主题失败", () => api.setSettings({ theme: t }));
   },
 
   // 以下都是「操作 + 重新拉取」的形状。阶段 4 起 Rust 会返回

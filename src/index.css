@@ -1,8 +1,75 @@
 @import "tailwindcss";
 
+/*
+ * 主题
+ *
+ * 默认深色，<html> 上的 `data-theme`（dark / light）是唯一切换点。
+ * 属性没设时按深色算 —— 首次挂载到设置读回来之间就是这个状态，
+ * 那几毫秒里不该闪一下亮色。
+ *
+ * 两套写法，分工不同：
+ *   - 中性色（底、描边、文字）走 @theme 变量，默认值就是深色，
+ *     亮色在 `html[data-theme="light"]` 里整组覆盖
+ *   - 强调色（13 种内容类型、状态色）没有全局变量可覆盖，
+ *     直接在元素上写 `light:` 变体
+ *
+ * 不用 Tailwind 默认的 prefers-color-scheme：主题归应用设置管，
+ * 「跟随系统」也是设置里的一项，由 lib/theme.ts 解析成 data-theme。
+ * 两处都跟着操作系统走会出现两套来源互相打架
+ */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 @theme {
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", "Noto Sans Mono CJK SC", monospace;
+
+  --color-canvas: #09090b;
+  --color-panel: #18181b;
+  /* 半透明白。深色下叠在底色上等于「提亮一点」 */
+  --color-line: #ffffff1a;
+  --color-line-soft: #ffffff0d;
+  --color-field: #ffffff0a;
+  --color-hover: #ffffff0d;
+  --color-active: #ffffff12;
+
+  --color-fg: #d4d4d8;
+  --color-fg-strong: #fafafa;
+  --color-label: #a1a1aa;
+  --color-muted: #71717a;
+  --color-faint: #52525b;
+  --color-ghost: #3f3f46;
+}
+
+/*
+ * 亮色。两处与深色相反，不能照抄深色的值：
+ *
+ * - 画布不用纯白。调色板是常驻窗口，长时间盯着纯白底刺眼；
+ *   面板保持纯白，这样浮起的卡片还分得出来（与 home/index.html 同）
+ * - 描边用发蓝的黑而不是半透明白。白底上的发丝线要更深才看得见，
+ *   直接把深色的 alpha 搬过来会淡到看不见
+ */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --color-canvas: #fafafa;
+  --color-panel: #ffffff;
+  --color-line: #0f172a1f;
+  --color-line-soft: #0f172a12;
+  --color-field: #0f172a0a;
+  --color-hover: #0f172a0f;
+  --color-active: #0f172a1a;
+
+  --color-fg: #3f3f46;
+  --color-fg-strong: #18181b;
+  --color-label: #52525b;
+  --color-muted: #71717a;
+  --color-faint: #8b8b95;
+  --color-ghost: #a1a1aa;
+}
+
+/* color-scheme 决定原生控件的样子：滚动条、数字输入框的步进箭头 */
+html {
+  color-scheme: dark;
 }
 
 html,
@@ -13,7 +80,7 @@ body,
 
 body {
   margin: 0;
-  background: #09090b;
+  background: var(--color-canvas);
   /* 桌面应用感：禁止整页滚动/选中 */
   overflow: hidden;
   user-select: none;
@@ -27,11 +94,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #ffffff14;
+  background: var(--color-active);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #ffffff26;
+  background: var(--color-line);
 }
 
 /* cmdk 输入框去掉浏览器默认样式 */
