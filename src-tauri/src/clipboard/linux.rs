@@ -37,7 +37,7 @@
 use crate::clipboard::MAX_BYTES;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt as XProtoExt, EventMask,
@@ -230,7 +230,7 @@ where
                 }
                 // 去重。我们自己持有时读回来的也是刚写进去的那条，
                 // 靠这一步挡住「接管 → 读回 → 存 → 再接管」的循环
-                if seen.is_repeat(&text, Instant::now()) {
+                if seen.is_repeat(&text) {
                     continue;
                 }
                 if let Some(why) = crate::sensitive::scan(&text) {
