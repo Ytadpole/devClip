@@ -275,6 +275,67 @@ test.describe("类型筛选与图片", () => {
   });
 });
 
+test.describe("工具箱动作条", () => {
+  /** 工具条本体。用 data-toolbox 而不是靠按钮文字找 ——
+      改一次文案不该连带改一次测试 */
+  const bar = (page: Page) => page.locator("[data-toolbox]");
+  const buttons = (page: Page) => page.locator("[data-toolbox] button");
+
+  /**
+   * 只看某个类型，让选中项的类型可确定。
+   *
+   * 必须先「清除筛选」：类型 chip 是**切换**而不是单选，
+   * 直接点下一个会把上一个也留着，于是第一项仍是上次的类型
+   */
+  const onlyType = async (page: Page, t: string) => {
+    // 没筛选时这个按钮不存在（`filtered &&`），所以不能直接点
+    const clear = page.locator("button", { hasText: "清除筛选" });
+    if (await clear.count()) await clear.click();
+    await page.locator("button", { hasText: new RegExp(`^${t}$`) }).first().click();
+    await expect(page.locator("[cmdk-item]").first()).toBeVisible();
+  };
+
+  test("动作列表由后端决定，不按类型硬编码", async ({ page }) => {
+    // mock 与 Rust 的 ENTRIES 必须一致（见 mock.ts 里的说明）。
+    // 以前两边各写各的：e2e 跑的是一套假的列表，
+    // 而真应用里点「Sort Keys」会得到「没有这个动作」
+    await onlyType(page, "json");
+    await expect(buttons(page)).toHaveText([/美化/, /美化 \(4 空格\)/, /压缩/]);
+
+    await onlyType(page, "sql");
+    await expect(buttons(page)).toHaveText([/格式化/, /关键字大写/, /关键字小写/, /提取表名/]);
+
+    // 用 url 而不是 uuid：筛选栏只有 QUICK_TYPES 那几个，
+    // uuid 的 chip 不在（它的动作由 Rust 侧单元测试守着）
+    await onlyType(page, "url");
+    await expect(buttons(page)).toHaveText([/去掉 query/, /提取域名/]);
+  });
+
+  test("JWT 动作带着「base64 不是加密」的提示", async ({ page }) => {
+    // docs/04 要求 UI 上明确标注。这句话只能从后端来 ——
+    // 写在文档里没人看得到，而用户点之前就该知道
+    await onlyType(page, "jwt");
+    await expect(buttons(page)).toHaveText([/解 Header/, /解 Payload/, /检查过期/]);
+    await expect(page.locator('[data-toolbox] button[title="base64 不是加密"]')).toHaveCount(2);
+  });
+
+  test("点动作会在状态栏给出摘要", async ({ page }) => {
+    await onlyType(page, "json");
+    await buttons(page).first().click();
+    // 返回的是摘要而不是结果本身 —— 结果进了剪贴板，
+    // 而状态栏放不下格式化后的 JSON（见 api.ts 的注释）
+    await expect(statusBar(page)).toHaveText(/mock.*已复制到剪贴板/);
+  });
+
+  test("没有动作的类型不显示工具条", async ({ page }) => {
+    // markdown 在阶段 6 没有动作。工具条不该留一条空壳 ——
+    // 之前 mock 侧给它挂了个 Outline，两边本来就对不上
+    await page.locator("[cmdk-input]").fill("# DevClip");
+    await expect(page.locator("[cmdk-item]").first()).toBeVisible();
+    await expect(bar(page)).toHaveCount(0);
+  });
+});
+
 test("选中态色条与行左边框完全重合", async ({ page }) => {
   // absolute 的包含块是 padding box：left-0 会缩进 border-l-2 内侧 2px，
   // 不写 top 还会退回静态位置（py-2.5 之下 10px）。
