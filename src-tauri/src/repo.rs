@@ -299,9 +299,12 @@ pub fn prune(
     let mut n = 0;
     if let Some(cut) = retention_ms {
         n += conn.execute(
+            // `<=` 而不是 `<`：cutoff 边界上的那一毫秒也要算过期。
+            // 否则 retention=0（「立即过期」）在两次 add 落在同一毫秒时
+            // 一条都删不掉 —— 那正是剪贴板被快速连按时的常态
             "DELETE FROM clipboard_item
              WHERE favorite = 0 AND expires_at IS NULL
-               AND created_at < ?1 - ?2",
+               AND created_at <= ?1 - ?2",
             params![now_ms(), cut],
         )?;
     }
@@ -515,8 +518,12 @@ mod tests {
     fn prune_keeps_favorites() {
         let c = open_in_memory().unwrap();
         let (keep, _) = add(&c, "keep me");
-        add(&c, "drop me");
+        let (drop, _) = add(&c, "drop me");
         toggle_favorite(&c, keep).unwrap();
+        // 把时间戳显式推到过去。不这么做的话这条测试得靠墙钟
+        // 往下走一毫秒才通过 —— 实测 8 次里挂 2 次。
+        // 「prune 会删掉该删的」不该取决于跑得多快
+        conn_set_created(&c, drop, now_ms() - 10_000);
         // retention=0 表示"立即过期"，会把非收藏的全删掉
         prune(&c, 0, Some(0)).unwrap();
         assert_eq!(count(&c).unwrap(), 1);
@@ -545,6 +552,14 @@ mod tests {
     fn conn_set_expiry(c: &Connection, id: i64, at: i64) {
         c.execute(
             "UPDATE clipboard_item SET expires_at = ?2 WHERE id = ?1",
+            params![id, at],
+        )
+        .unwrap();
+    }
+
+    fn conn_set_created(c: &Connection, id: i64, at: i64) {
+        c.execute(
+            "UPDATE clipboard_item SET created_at = ?2 WHERE id = ?1",
             params![id, at],
         )
         .unwrap();
