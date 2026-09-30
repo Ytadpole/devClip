@@ -9,14 +9,18 @@
 //! 与原始设计的偏离：`run` 的类型是 `fn(&str) -> Result<String, String>`，
 //! 不接受 `&AppHandle`。
 //!
-//! 原因是**可测**。动作全是纯字符串变换，一个不需要起 Tauri 应用的
-//! 单元测试比真机点一遍便宜太多 —— 而后面几类格式化逻辑恰恰是
-//! 最需要测试兜底的。
+//! 原因是**可测**。六类动作里有五类是纯字符串变换，一个不需要
+//! 起 Tauri 应用的单元测试比真机点一遍便宜太多 —— 而 SQL 格式化
+//! 这种逻辑恰恰是最需要测试兜底的。
 //!
 //! 需要应用句柄的动作（打开浏览器）不进注册表，走单独的 command。
 
 mod b64;
 mod json;
+mod jwt;
+mod sql;
+mod url_tool;
+mod uuid_tool;
 
 use serde::Serialize;
 
@@ -73,6 +77,27 @@ pub static ENTRIES: &[Entry] = &[
         run: json::minify,
     },
     Entry {
+        id: "jwt.decode_header",
+        label: "解 Header",
+        hint: Some("base64 不是加密"),
+        applies_to: &[ContentType::Jwt],
+        run: jwt::decode_header,
+    },
+    Entry {
+        id: "jwt.decode_payload",
+        label: "解 Payload",
+        hint: Some("base64 不是加密"),
+        applies_to: &[ContentType::Jwt],
+        run: jwt::decode_payload,
+    },
+    Entry {
+        id: "jwt.verify_exp",
+        label: "检查过期",
+        hint: Some("只读 exp，不验签"),
+        applies_to: &[ContentType::Jwt],
+        run: jwt::verify_exp,
+    },
+    Entry {
         id: "b64.decode",
         label: "解码",
         hint: None,
@@ -102,6 +127,69 @@ pub static ENTRIES: &[Entry] = &[
         hint: Some("字母表 -_ 而非 +/"),
         applies_to: &[ContentType::Base64, ContentType::Text, ContentType::Code],
         run: b64::to_urlsafe,
+    },
+    Entry {
+        id: "sql.format",
+        label: "格式化",
+        hint: Some("关键字大写 + 换行"),
+        applies_to: &[ContentType::Sql],
+        run: sql::format,
+    },
+    Entry {
+        id: "sql.upper",
+        label: "关键字大写",
+        hint: None,
+        applies_to: &[ContentType::Sql],
+        run: sql::upper,
+    },
+    Entry {
+        id: "sql.lower",
+        label: "关键字小写",
+        hint: None,
+        applies_to: &[ContentType::Sql],
+        run: sql::lower,
+    },
+    Entry {
+        id: "sql.tables",
+        label: "提取表名",
+        hint: Some("只解析，不连库"),
+        applies_to: &[ContentType::Sql],
+        run: sql::tables,
+    },
+    Entry {
+        id: "url.strip_query",
+        label: "去掉 query",
+        applies_to: &[ContentType::Url],
+        hint: None,
+        run: url_tool::strip_query,
+    },
+    Entry {
+        id: "url.domain",
+        label: "提取域名",
+        applies_to: &[ContentType::Url],
+        hint: None,
+        run: url_tool::domain,
+    },
+    Entry {
+        id: "uuid.upper",
+        label: "转大写",
+        applies_to: &[ContentType::Uuid],
+        hint: None,
+        run: uuid_tool::upper,
+    },
+    Entry {
+        id: "uuid.lower",
+        label: "转小写",
+        applies_to: &[ContentType::Uuid],
+        hint: None,
+        run: uuid_tool::lower,
+    },
+    Entry {
+        id: "uuid.no_dashes",
+        label: "去横线",
+        hint: Some("MySQL bin(16) 用这个"),
+        applies_to: &[ContentType::Uuid],
+        run: uuid_tool::no_dashes,
     },
 ];
 
@@ -154,24 +242,6 @@ mod tests {
         assert!(for_type(ContentType::Markdown).is_empty());
     }
 
-    /// id 的前缀必须与 applies_to 对得上，否则前端拿 json 的动作
-    /// 去跑一条 base64 会走到不相干的实现上，而报错还很难懂
-    #[test]
-    fn ids_are_namespaced_by_type() {
-        for e in ENTRIES {
-            let want = match e.id.split('.').next().unwrap() {
-                "json" => ContentType::Json,
-                "b64" => ContentType::Base64,
-                other => panic!("未知命名空间 {other}"),
-            };
-            assert!(
-                e.applies_to.contains(&want),
-                "{} 的 id 前缀与 applies_to 不符",
-                e.id
-            );
-        }
-    }
-
     #[test]
     fn every_id_is_unique() {
         let mut ids: Vec<_> = ENTRIES.iter().map(|e| e.id).collect();
@@ -182,10 +252,117 @@ mod tests {
     }
 
     #[test]
+    fn ids_are_namespaced_by_type() {
+        // id 的前缀必须与 applies_to 对得上，否则前端拿 json 的动作
+        // 去跑一条 sql 会走到不相干的实现上，而报错还很难懂
+        for e in ENTRIES {
+            let ns = e.id.split('.').next().unwrap();
+            let want = match ns {
+                "json" => ContentType::Json,
+                "jwt" => ContentType::Jwt,
+                "b64" => ContentType::Base64,
+                "sql" => ContentType::Sql,
+                "url" => ContentType::Url,
+                "uuid" => ContentType::Uuid,
+                other => panic!("未知命名空间 {other}"),
+            };
+            assert!(
+                e.applies_to.contains(&want),
+                "{} 的 id 前缀与 applies_to 不符",
+                e.id
+            );
+        }
+    }
+
+    /// 动作能不能用，实际是拿**数据库里的字符串**判断的（见 lib.rs
+    /// 的 run_toolbox_action），所以得钉住「字符串 → 枚举」这条路，
+    /// 而不是只测枚举本身。as_str/from_str 少写一个分支的话，
+    /// 那一条类型的工具条会静默消失 —— 而它只是少几个按钮，不报错
+    #[test]
+    fn type_strings_round_trip() {
+        for want in [
+            ContentType::Image,
+            ContentType::Json,
+            ContentType::Jwt,
+            ContentType::Uuid,
+            ContentType::Ip,
+            ContentType::Url,
+            ContentType::Commit,
+            ContentType::Exception,
+            ContentType::Sql,
+            ContentType::Base64,
+            ContentType::Markdown,
+            ContentType::Code,
+            ContentType::Text,
+        ] {
+            let s = want.as_str();
+            let got: ContentType = s.parse().unwrap();
+            assert_eq!(got, want, "{s} 解析回来不是自己");
+        }
+    }
+
+    #[test]
+    fn unknown_type_falls_back_to_text() {
+        // 脏数据不该把工具箱卡住。回退到 text 的后果是：一条类型
+        // 认不出的记录仍能拿到 base64 编码动作，比什么都不给好用
+        let got: ContentType = "nonsense".parse().unwrap();
+        assert_eq!(got, ContentType::Text);
+    }
+
+    /// 「能列出来」与「能跑」必须是同一个判断。这条把两者绑在一起：
+    /// for_type() 用的是 applies_to，运行时的适用性检查也用 applies_to，
+    /// 一旦有人只改其中一边，UI 上就会给出点一下就报错的按钮
+    #[test]
+    fn listed_actions_are_exactly_the_runnable_ones() {
+        for t in [
+            ContentType::Json,
+            ContentType::Jwt,
+            ContentType::Base64,
+            ContentType::Sql,
+            ContentType::Url,
+            ContentType::Uuid,
+            ContentType::Text,
+            ContentType::Code,
+            ContentType::Image,
+            ContentType::Markdown,
+        ] {
+            for a in for_type(t) {
+                let e = find(&a.id).expect("列出来的动作必须能按 id 找到");
+                assert!(
+                    e.applies_to.contains(&t),
+                    "{} 对 {} 列出来了，但运行时会拒绝",
+                    a.id,
+                    t.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn find_rejects_unknown_id() {
         assert!(find("json.format").is_some());
         assert!(find("json.nope").is_none());
-        // 前缀匹配不算命中，否则 "b64" 会命中 "b64.encode"
-        assert!(find("b64").is_none());
+        // 前缀匹配不算命中，否则 "sql" 会命中 "sql.format"
+        assert!(find("sql").is_none());
+    }
+
+    #[test]
+    fn jwt_actions_carry_the_not_encrypted_hint() {
+        // docs/04 要求 UI 上明确标注 JWT 是 base64 不是加密。
+        // 这个提示只在前端能看见，所以必须由后端带出去。
+        // 逐条断言文案而不只是 is_some()：两条解码动作要说明 payload
+        // 是明文可读的，verify_exp 要说明它不验签。三者不能互相顶替 ——
+        // 「不验签」比「不是加密」更要紧，少说等于误导
+        let want = [
+            ("jwt.decode_header", Some("base64 不是加密")),
+            ("jwt.decode_payload", Some("base64 不是加密")),
+            ("jwt.verify_exp", Some("只读 exp，不验签")),
+        ];
+        let actions = for_type(ContentType::Jwt);
+        let got: Vec<_> = actions
+            .iter()
+            .map(|a| (a.id.as_str(), a.hint.as_deref()))
+            .collect();
+        assert_eq!(got, want);
     }
 }
