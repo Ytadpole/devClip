@@ -55,6 +55,8 @@ fn main() {
                 content,
                 source_app: Some("seed".into()),
                 image_path: None,
+                sensitive: false,
+                expires_at: None,
             },
         )
         .unwrap_or_else(|e| panic!("第 {i} 条入库失败: {e}"));

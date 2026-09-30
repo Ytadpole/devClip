@@ -30,6 +30,11 @@ const MAX_BYTES: usize = 1024 * 1024;
 const MAX_ITEMS: i64 = 1000;
 const RETENTION_DAYS: i64 = 30;
 
+/// 敏感内容的存活时间（docs/03：now + 60s）。
+/// 到期由后台任务删除并清空剪贴板；再次复制会顺延。
+/// 阶段 7 接到设置项 sensitiveAutoExpire 后由它开关
+const SENSITIVE_TTL_MS: i64 = 60_000;
+
 /// 锁中毒在别处（lib.rs 的数据库连接）按「报告但别崩」处理，这里同理。
 /// 剪贴板状态只是缓存，坏掉重读一次就恢复了，不值得为此杀掉监听线程
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -306,17 +311,17 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
                 if text.trim().is_empty() || text.len() > MAX_BYTES {
                     continue;
                 }
-                // 敏感内容不入库。
+                // 敏感内容打标记入库，不再直接跳过。
                 //
-                // 位置很要紧：必须在 capture 之前。入完库再判等于没判 ——
-                // 密钥已经落到磁盘上了，删掉也说不清它存在过多久。
-                // 也不 emit：前端收到事件会刷新列表，而列表里并没有
-                // 新东西，刷新一次只是白闪一下
-                if let Some(why) = crate::sensitive::scan(&text) {
-                    eprintln!("剪贴板内容疑似敏感（{why}），已跳过入库");
-                    continue;
-                }
-                if let Some(item) = capture(&app, &text) {
+                // 早先这里是「不入库」，理由是历史明文落盘 —— 但那让
+                // 用户毫无感知：复制了密钥，打开调色板什么都没有，
+                // 只会以为 DevClip 坏了。按 docs/03 的设计改为入库打标：
+                // UI 打锁、默认搜不到（repo::list 排除）、60 秒后由
+                // 后台任务删除。暴露窗口从「永久」收敛到 60 秒，
+                // 而密钥本来就已经在系统剪贴板里躺着了
+                let sensitive = crate::sensitive::scan(&text).is_some();
+                let expires_at = sensitive.then(|| repo::now_ms() + SENSITIVE_TTL_MS);
+                if let Some(item) = capture(&app, &text, sensitive, expires_at) {
                     let _ = tauri::Emitter::emit(&app, "clipboard://changed", item);
                 }
             }
@@ -325,7 +330,12 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
 }
 
 /// 入库一条新内容。返回它，供前端增量刷新
-fn capture(app: &tauri::AppHandle, text: &str) -> Option<repo::ClipboardItem> {
+fn capture(
+    app: &tauri::AppHandle,
+    text: &str,
+    sensitive: bool,
+    expires_at: Option<i64>,
+) -> Option<repo::ClipboardItem> {
     // 取前台应用必须在锁外。系统调用一旦变慢（权限弹窗、进程起不来），
     // 就会把整把数据库锁一起拖住，界面和别的命令全卡死
     // 前台应用是自己就记 null。调色板显示时 DevClip 是前台窗口，
@@ -339,6 +349,8 @@ fn capture(app: &tauri::AppHandle, text: &str) -> Option<repo::ClipboardItem> {
             content: text.to_string(),
             source_app,
             image_path: None,
+            sensitive,
+            expires_at,
         },
     )
     .ok()?;

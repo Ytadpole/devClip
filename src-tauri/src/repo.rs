@@ -23,6 +23,9 @@ pub struct ClipboardItem {
     pub last_copied_at: i64,
     pub favorite: bool,
     pub sensitive: bool,
+    /// 到期自动清除（毫秒）。None = 永不过期。
+    /// 目前只有敏感项会带，前端暂不展示，只随 JSON 带出去
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -31,6 +34,9 @@ pub struct Query {
     pub text: Option<String>,
     pub types: Option<Vec<String>>,
     pub favorite_only: Option<bool>,
+    /// 含敏感信息的分组。默认关 —— docs/03：敏感项不参与普通结果，
+    /// 用户主动展开才可见。这层过滤在 SQL 里做，前端不碰
+    pub include_sensitive: Option<bool>,
     pub since: Option<i64>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -42,6 +48,12 @@ pub struct NewItem {
     pub content: String,
     pub source_app: Option<String>,
     pub image_path: Option<String>,
+    /// 疑似密钥/token。由调用方先跑 sensitive::scan 再传进来 ——
+    /// 仓库层不认规则，只认结论
+    pub sensitive: bool,
+    /// 到期自动清除（毫秒），None 表示不过期。
+    /// 目前只有敏感项会带：docs/03 定的 now + 60s
+    pub expires_at: Option<i64>,
 }
 
 pub fn now_ms() -> i64 {
@@ -67,7 +79,7 @@ fn preview(content: &str, max: usize) -> String {
 }
 
 const COLS: &str = "id, content, content_type, preview, image_path, byte_size,
-     copy_count, source_app, created_at, last_copied_at, favorite, sensitive";
+     copy_count, source_app, created_at, last_copied_at, favorite, sensitive, expires_at";
 
 fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
     Ok(ClipboardItem {
@@ -83,6 +95,7 @@ fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
         last_copied_at: r.get(9)?,
         favorite: r.get::<_, i64>(10)? != 0,
         sensitive: r.get::<_, i64>(11)? != 0,
+        expires_at: r.get(12)?,
     })
 }
 
@@ -104,11 +117,22 @@ pub fn upsert(conn: &Connection, item: &NewItem) -> Result<(i64, bool), DbError>
         .optional()?;
 
     if let Some((id, count)) = existing {
+        // 敏感项被再次复制说明用户还在用它，到期时间要顺延，
+        // 否则粘到一半条目就从历史里消失了。
+        // 非敏感项 expires_at 本来就是 NULL，顺延是空操作
+        let expiry_sql = if item.expires_at.is_some() {
+            ", expires_at = ?4"
+        } else {
+            ""
+        };
         conn.execute(
-            "UPDATE clipboard_item
-             SET copy_count = ?2, last_copied_at = ?3, source_app = COALESCE(?4, source_app)
-             WHERE id = ?1",
-            params![id, count + 1, now, item.source_app],
+            &format!(
+                "UPDATE clipboard_item
+                 SET copy_count = ?2, last_copied_at = ?3{expiry_sql},
+                     source_app = COALESCE(?5, source_app)
+                 WHERE id = ?1"
+            ),
+            params![id, count + 1, now, item.expires_at, item.source_app],
         )?;
         return Ok((id, false));
     }
@@ -117,8 +141,8 @@ pub fn upsert(conn: &Connection, item: &NewItem) -> Result<(i64, bool), DbError>
     conn.execute(
         "INSERT INTO clipboard_item
            (content, content_hash, content_type, preview, image_path, byte_size,
-            copy_count, source_app, created_at, last_copied_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?8)",
+            copy_count, source_app, created_at, last_copied_at, sensitive, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?8, ?9, ?10)",
         params![
             item.content,
             h,
@@ -127,7 +151,9 @@ pub fn upsert(conn: &Connection, item: &NewItem) -> Result<(i64, bool), DbError>
             item.image_path,
             bytes,
             item.source_app,
-            now
+            now,
+            item.sensitive,
+            item.expires_at
         ],
     )?;
     Ok((conn.last_insert_rowid(), true))
@@ -180,6 +206,11 @@ pub fn list(conn: &Connection, q: &Query) -> Result<Vec<ClipboardItem>, DbError>
         }
     }
 
+    // 三个分支都产出了 WHERE，这里统一追加。放在类型过滤之前
+    // 没有特别的原因，只是敏感排除是「分组」语义，排最前
+    if !q.include_sensitive.unwrap_or(false) {
+        sql.push_str(" AND c.sensitive = 0");
+    }
     if q.favorite_only.unwrap_or(false) {
         sql.push_str(" AND c.favorite = 1");
     }
@@ -268,16 +299,6 @@ pub fn count(conn: &Connection) -> Result<i64, DbError> {
     Ok(conn.query_row("SELECT count(*) FROM clipboard_item", [], |r| r.get(0))?)
 }
 
-/// 标记敏感内容。阶段 7 的敏感信息识别会调用
-#[allow(dead_code)]
-pub fn set_sensitive(conn: &Connection, id: i64, sensitive: bool) -> Result<(), DbError> {
-    conn.execute(
-        "UPDATE clipboard_item SET sensitive = ?2 WHERE id = ?1",
-        params![id, sensitive as i64],
-    )?;
-    Ok(())
-}
-
 /// 查已到期的条目。阶段 7 的后台清理任务会调用
 #[allow(dead_code)]
 pub fn expired(conn: &Connection, now: i64) -> Result<Vec<i64>, DbError> {
@@ -331,6 +352,22 @@ mod tests {
                 content: s.into(),
                 source_app: None,
                 image_path: None,
+                sensitive: false,
+                expires_at: None,
+            },
+        )
+        .unwrap()
+    }
+
+    fn add_sensitive(conn: &Connection, s: &str, ttl_ms: i64) -> (i64, bool) {
+        upsert(
+            conn,
+            &NewItem {
+                content: s.into(),
+                source_app: None,
+                image_path: None,
+                sensitive: true,
+                expires_at: Some(now_ms() + ttl_ms),
             },
         )
         .unwrap()
@@ -547,6 +584,81 @@ mod tests {
         assert!(expired(&c, now_ms()).unwrap().is_empty());
         conn_set_expiry(&c, id, now_ms() - 1000);
         assert_eq!(expired(&c, now_ms()).unwrap(), vec![id]);
+    }
+
+    /// docs/03：敏感项默认不参与普通结果，展开「含敏感」分组才可见。
+    /// 不分搜索词与否，两条路径都得排除
+    #[test]
+    fn sensitive_hidden_unless_group_expanded() {
+        let c = open_in_memory().unwrap();
+        let (sid, _) = add_sensitive(&c, "sk_live_abcdefghijklmnopqr", 60_000);
+        add(&c, "harmless note");
+
+        let plain = list(&c, &Query::default()).unwrap();
+        assert_eq!(plain.len(), 1, "默认列表不该出现敏感项");
+        assert!(plain.iter().all(|i| i.id != sid));
+
+        let searched = list(
+            &c,
+            &Query {
+                text: Some("sk_live".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(searched.is_empty(), "默认搜索也不该搜到敏感项");
+
+        let expanded = list(
+            &c,
+            &Query {
+                include_sensitive: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(expanded.len(), 2, "展开分组后敏感项可见");
+        assert!(expanded.iter().any(|i| i.id == sid));
+        assert!(
+            expanded.iter().any(|i| i.sensitive),
+            "敏感标记要带出去给 UI 打锁"
+        );
+    }
+
+    /// 敏感项被再次复制说明用户还在用它，到期时间必须顺延 ——
+    /// 否则粘到一半条目就从历史里消失了
+    #[test]
+    fn recopying_sensitive_item_extends_expiry() {
+        let c = open_in_memory().unwrap();
+        let content = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let (id, _) = add_sensitive(&c, content, -30_000); // 已到期但还没被清
+                                                           // 再复制一次，带新的 60 秒
+        let (id2, created) = add_sensitive(&c, content, 60_000);
+        assert!(!created, "同内容应命中去重");
+        assert_eq!(id, id2);
+
+        let it = get(&c, id).unwrap().unwrap();
+        assert_eq!(it.copy_count, 2);
+        assert!(
+            it.expires_at.unwrap() > now_ms(),
+            "到期时间应已被顺延到未来，实际 {:?}",
+            it.expires_at
+        );
+    }
+
+    /// prune 的 SQL 显式排除 expires_at IS NOT NULL 的行（见 prune 实现）——
+    /// 敏感项按「到期才删」走自己的生命周期，
+    /// 保留期清理提前删掉它等于绕过设计
+    #[test]
+    fn prune_leaves_pending_sensitive_alone() {
+        let c = open_in_memory().unwrap();
+        let (sid, _) = add_sensitive(&c, "xoxb-1234567890123456", 60_000);
+        add(&c, "ordinary");
+        // retention=0：非收藏、非敏感的全删
+        prune(&c, 0, Some(0)).unwrap();
+        assert!(
+            get(&c, sid).unwrap().is_some(),
+            "还没到期的敏感项不该被保留期清理删掉"
+        );
     }
 
     fn conn_set_expiry(c: &Connection, id: i64, at: i64) {

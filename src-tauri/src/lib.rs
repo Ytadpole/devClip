@@ -168,6 +168,8 @@ fn add_item(
             content,
             source_app,
             image_path: None,
+            sensitive: false,
+            expires_at: None,
         },
     )
     .map_err(|e| err("保存失败", e))?;
