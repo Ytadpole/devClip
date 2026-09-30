@@ -76,9 +76,12 @@ const setScroll = (page: Page, top: number) =>
 /**
  * 状态栏。断言必须用 locator（自带重试）：直接读 textContent 是
  * 一次快照，而 mock 有 40ms 延迟，很容易读到还没更新的值。
- * 另外别用 div.border-t > span 去定位，工具箱那条也是 border-t。
+ *
+ * 靠 data-status 而不是配色类定位：状态色要随主题换（浅色下
+ * emerald-400 白底读不出来），类名一变测试就跟着碎。data-status
+ * 顺带给出了 ok / warn / err，比「这个 span 恰好是绿的」语义准
  */
-const statusBar = (page: Page) => page.locator(".text-emerald-400, .text-amber-400").first();
+const statusBar = (page: Page) => page.locator("[data-status]").first();
 
 test.beforeEach(async ({ page }) => {
   // mock 是内存态，重新加载页面才能保证每个用例从同一起点开始
@@ -384,11 +387,85 @@ test.describe("设置页", () => {
     const days = page.locator("[data-settings] input[type=number]").first();
     await days.fill("7");
     await page.getByRole("button", { name: "保存设置" }).click();
-    await expect(page.locator(".text-emerald-400, .text-amber-400").first()).toHaveText(/已保存/);
+    await expect(statusBar(page)).toHaveText(/已保存/);
 
     await page.locator("[cmdk-input], [data-settings] input").first().press("Escape");
     await expect(page.locator("[data-settings]")).toHaveCount(0);
     await expect(page.locator("[cmdk-item]").first()).toBeVisible();
+  });
+});
+
+test.describe("主题", () => {
+  const html = (page: Page) => page.locator("html");
+
+  /** 设置页里的三选一。data-theme-picker 是稳定钩子，别改成靠文字找 */
+  const pick = async (page: Page, label: string) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    await expect(page.locator("[data-settings]")).toBeVisible();
+    await page.locator("[data-theme-picker] button", { hasText: label }).click();
+    // setTheme 是 await api.setSettings 之后才 resolve，但 apply() 在
+    // await 之前就跑完了，所以这里不用等
+    await expect(page.locator(`[data-theme-picker] button:text-is("${label}")`)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  };
+
+  /**
+   * body 的实际底色。
+   *
+   * 断言属性名（data-theme）只能证明 JS 跑到了，证明不了 CSS 真的
+   * 换过来了 —— 少写一条 `html[data-theme="light"]` 规则的话，
+   * 属性照样变，而界面还是黑的
+   */
+  const canvas = (page: Page) =>
+    page.evaluate(() => {
+      const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!;
+      return m.slice(0, 3).map(Number);
+    });
+
+  test("默认深色，切到亮色后 html 带 data-theme=light 且底色真的变白", async ({ page }) => {
+    // mock 的默认设置是 dark。这条也守着「没设 data-theme 时按深色算」：
+    // 属性在设置读回来之前是缺的，那几毫秒里不能闪一下亮色
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+    expect(Math.max(...(await canvas(page)))).toBeLessThan(40);
+
+    await pick(page, "亮色");
+    await expect(html(page)).toHaveAttribute("data-theme", "light");
+    expect(Math.min(...(await canvas(page)))).toBeGreaterThan(200);
+  });
+
+  test("切回深色能还原，不会卡在亮色", async ({ page }) => {
+    await pick(page, "亮色");
+    await pick(page, "深色");
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+    expect(Math.max(...(await canvas(page)))).toBeLessThan(40);
+  });
+
+  test("设置页的开关标出当前主题", async ({ page }) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    const pressed = page.locator("[data-theme-picker] button[aria-pressed=true]");
+    await expect(pressed).toHaveText("深色");
+    await pick(page, "亮色");
+    await expect(pressed).toHaveText("亮色");
+  });
+});
+
+test.describe("主题 · 跟随系统", () => {
+  // 默认的 colorScheme 是 light。选「跟随系统」后应当变亮 ——
+  // 这条守的是 system 不是恒等于 dark
+  test.use({ colorScheme: "light" });
+
+  test("系统是亮色时选跟随系统就变亮", async ({ page }) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.locator("[data-theme-picker] button", { hasText: "跟随系统" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  });
+
+  test("显式选深色不受系统影响", async ({ page }) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    await page.locator("[data-theme-picker] button", { hasText: "深色" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 });
 

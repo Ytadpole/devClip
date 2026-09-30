@@ -42,7 +42,9 @@ import 就构建失败。
 - **断言一律用 locator**（`toHaveText` / `toHaveCount` / `toContainText`），
   它们自带重试。`textContent()` 是一次快照，mock 有 40ms 延迟，很容易读到旧值
 - **别用 `div.border-t > span` 找状态栏** —— 工具箱那条也是 `border-t`，
-  会先匹配到它。状态栏用 `.text-emerald-400, .text-amber-400`
+  会先匹配到它。状态栏用 `[data-status]`（`ok` / `warn` / `err`），
+  千万别改成按配色类找：状态色跟着主题走，浅色下 `text-emerald-400`
+  白底读不出来，类名一变测试就跟着碎
 - **`e2e/` 里不 import 应用代码**。行高常量是故意写死的 `62`：导入了的话
   改了 `ROW_H` 测试会跟着变，回归就悄悄溜过去
 - **没测防抖间隔**，这是有意的。store 的请求序号会丢弃过期响应，所以把
@@ -50,7 +52,8 @@ import 就构建失败。
   要测得往 `api` 层加计数器，属于改被测代码换可观测性
 
 已验证能抓到的回归（改坏后确实会红）：摘掉 `VirtualList` 的 pin 区间、
-只改 `ItemRow` 的行高而不动 `ROW_H`。
+只改 `ItemRow` 的行高而不动 `ROW_H`、删掉 `index.css` 里
+`html[data-theme="light"]` 那组覆盖（主题测试会读 `body` 的实际底色）。
 
 Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 
@@ -67,6 +70,14 @@ Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
 
 - **端口 1420 且 `strictPort: true`** —— 被占用会直接失败。不要改端口，`tauri.conf.json` 的 `devUrl` 依赖这个值
 - **Tailwind v4 没有 `tailwind.config.js`** —— 主题配在 `src/index.css` 的 `@theme` 里
+- **配色分两套写法，别混**（见 `index.css` 顶部注释）：中性色
+  （`bg-canvas` / `text-fg` / `border-line` …）是 `@theme` 变量，默认深色，
+  亮色在 `html[data-theme="light"]` 里整组覆盖；强调色（13 种类型色、
+  状态色）用元素上的 `light:` 变体。**组件里不要直接写 `zinc-950`、
+  `white/10` 这类字面色**，那样切不掉
+- **`Settings.theme` 早就存在但以前没人消费** —— Rust 侧一直在存
+  （`settings.rs` / `clamp_settings` 都已放行 `dark|light|system`）。
+  这次的活儿全在前端：解析 `system`、落成 `<html data-theme>`、设置页开关
 - **`src/lib/mock.ts` 是内存态** —— 刷新即重置。新功能要造数据就往这里加
 - **`docs/` 在版本库中** —— 6 份设计文档 + `DEVLOG.md` 都已入库。
   设计有变更时连同文档一起改，别让代码走在文档前面
