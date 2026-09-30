@@ -233,9 +233,10 @@ test.describe("搜索", () => {
   });
 
   test("输入后按内容过滤", async ({ page }) => {
-    await page.locator("[cmdk-input]").fill("postgres");
+    // 别用 postgres 当样本：含它的那行是敏感项，默认分组下搜不到
+    await page.locator("[cmdk-input]").fill("select * from users");
     await expect(page.locator("[cmdk-item]")).toHaveCount(1);
-    await expect(page.locator("[cmdk-item]")).toContainText("postgres");
+    await expect(page.locator("[cmdk-item]")).toContainText("select * from users");
   });
 
   test("无结果时显示空状态", async ({ page }) => {
@@ -333,6 +334,61 @@ test.describe("工具箱动作条", () => {
     await page.locator("[cmdk-input]").fill("# DevClip");
     await expect(page.locator("[cmdk-item]").first()).toBeVisible();
     await expect(bar(page)).toHaveCount(0);
+  });
+});
+
+test.describe("敏感信息分组", () => {
+  test("默认搜不到敏感项，展开分组后可见且带锁", async ({ page }) => {
+    // mock 第 13 条是 sensitive 的 DATABASE_URL。默认分组下它不存在，
+    // 「默认搜不到」是后端过滤的职责 —— mock 与 Rust 的 repo::list 同规则
+    await page.locator("[cmdk-input]").fill("DATABASE_URL");
+    await expect(page.locator("[cmdk-item]")).toHaveCount(0);
+    await expect(page.getByText("没有匹配")).toBeVisible();
+
+    await page.getByRole("button", { name: "含敏感" }).click();
+    await expect(page.locator("[cmdk-item]")).toHaveCount(1);
+    await expect(page.locator("[cmdk-item]").first()).toContainText("DATABASE_URL");
+    // 行内要有锁标记，用户得能看出这条为什么藏着
+    await expect(page.locator("[cmdk-item]").first()).toContainText("敏感");
+
+    // 收起分组继续隐藏
+    await page.getByRole("button", { name: "含敏感" }).click();
+    await expect(page.locator("[cmdk-item]")).toHaveCount(0);
+  });
+
+  test("展开分组不影响普通内容的排序与可见性", async ({ page }) => {
+    await page.getByRole("button", { name: "含敏感" }).click();
+    await expect(page.locator("[cmdk-item]").first()).toBeVisible();
+    // 148 条都在（敏感项只是多出来，不是替换别人）
+    await page.locator("[cmdk-input]").press("End");
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const list = document.querySelector("[cmdk-list]")!;
+          const sel = document.querySelector('[cmdk-item][aria-selected="true"]')!;
+          return Math.round(
+            (sel.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop) / 62,
+          );
+        }),
+      )
+      .toBeGreaterThan(140);
+  });
+});
+
+test.describe("设置页", () => {
+  test("打开、保存、Esc 退回", async ({ page }) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    await expect(page.locator("[data-settings]")).toBeVisible();
+
+    // 改保留天数并保存，状态栏要有回音
+    const days = page.locator("[data-settings] input[type=number]").first();
+    await days.fill("7");
+    await page.getByRole("button", { name: "保存设置" }).click();
+    await expect(page.locator(".text-emerald-400, .text-amber-400").first()).toHaveText(/已保存/);
+
+    await page.locator("[cmdk-input], [data-settings] input").first().press("Escape");
+    await expect(page.locator("[data-settings]")).toHaveCount(0);
+    await expect(page.locator("[cmdk-item]").first()).toBeVisible();
   });
 });
 
