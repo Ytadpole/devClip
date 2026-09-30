@@ -48,6 +48,15 @@ export interface Query {
 export interface ToolboxAction {
   id: string;
   label: string;
+  /**
+   * 一句话解释这个动作会得到什么。由 Rust 侧给，前端不猜。
+   *
+   * 存在的理由不只是「解释」：JWT 那几条必须带上
+   * 「base64 不是加密」—— 用户点之前就该知道 payload 是明文可读的，
+   * 而不是解完才发现。这句话写在后端是因为它跟着动作的实现走，
+   * 写在文档里则没人会看到
+   */
+  hint?: string;
 }
 
 export interface Settings {
@@ -73,7 +82,20 @@ export interface ClipboardApi {
   copyToClipboard(id: number): Promise<void>;
   paste(id: number): Promise<void>;
 
+  /**
+   * 这个内容类型可用的工具箱动作。列表完全由后端决定 ——
+   * 前端不做任何类型判断（见 AGENTS.md 的两咽喉点）
+   */
   availableActions(t: ContentType): Promise<ToolboxAction[]>;
+
+  /**
+   * 跑一个动作。**结果是写进系统剪贴板的**，返回值只是一句摘要，
+   * 用来显示在状态栏。
+   *
+   * 为什么不直接返回结果字符串：格式化后的 JSON 动辄几 KB，
+   * 状态栏放不下也不该放。用户要的是「变换完直接粘」，
+   * 结果在哪都比在界面上更好用
+   */
   runToolboxAction(id: number, actionId: string): Promise<ActionResult>;
 
   getSettings(): Promise<Settings>;

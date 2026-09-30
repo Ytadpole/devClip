@@ -207,45 +207,98 @@ const FILLERS: ClipboardItem[] = Array.from({ length: 120 }, (_, k) => {
 
 const db: ClipboardItem[] = [...SEED, ...FILLERS];
 
-/** 工具箱动作表 —— 对应 docs/04-内容识别与工具箱.md，阶段 6 移到 Rust 侧 */
+/**
+ * 动作列表。必须与 `src-tauri/src/toolbox/mod.rs` 的 ENTRIES 对齐。
+ *
+ * 以前这里是各写各的：Rust 侧返回 Format / Minify，mock 侧返回
+ * Format / Minify / Sort Keys，看起来「差不多」，于是 e2e 跑的是
+ * 一套假的动作列表，而真应用里点「Sort Keys」会得到「没有这个动作」。
+ * 对齐的成本是每次加动作改两处，值得
+ */
 const ACTIONS: Record<ContentType, ToolboxAction[]> = {
   json: [
-    { id: "json.format", label: "Format" },
-    { id: "json.minify", label: "Minify" },
-    { id: "json.sort_keys", label: "Sort Keys" },
-    { id: "copy", label: "Copy" },
+    { id: "json.format", label: "美化", hint: "2 空格缩进" },
+    { id: "json.format4", label: "美化 (4 空格)", hint: "4 空格缩进" },
+    { id: "json.minify", label: "压缩", hint: "压成一行" },
   ],
   jwt: [
-    { id: "jwt.decode_header", label: "Decode Header" },
-    { id: "jwt.decode_payload", label: "Decode Payload" },
-    { id: "jwt.verify_exp", label: "Verify Exp" },
-  ],
-  sql: [
-    { id: "sql.format", label: "Format" },
-    { id: "sql.tables", label: "Extract Tables" },
-    { id: "sql.upper_kw", label: "Upper Keywords" },
+    { id: "jwt.decode_header", label: "解 Header", hint: "base64 不是加密" },
+    { id: "jwt.decode_payload", label: "解 Payload", hint: "base64 不是加密" },
+    { id: "jwt.verify_exp", label: "检查过期", hint: "只读 exp，不验签" },
   ],
   base64: [
-    { id: "base64.decode", label: "Decode" },
-    { id: "base64.encode", label: "Encode" },
+    { id: "b64.decode", label: "解码" },
+    { id: "b64.decode_urlsafe", label: "解码 (url-safe)", hint: "字母表 -_ 而非 +/" },
+    { id: "b64.encode", label: "编码", hint: "任意文本 → Base64" },
+    { id: "b64.encode_urlsafe", label: "编码 (url-safe)", hint: "字母表 -_ 而非 +/" },
   ],
-  uuid: [
-    { id: "uuid.upper", label: "Upper" },
-    { id: "uuid.lower", label: "Lower" },
-    { id: "uuid.no_dash", label: "Remove Dashes" },
+  sql: [
+    { id: "sql.format", label: "格式化", hint: "关键字大写 + 换行" },
+    { id: "sql.upper", label: "关键字大写" },
+    { id: "sql.lower", label: "关键字小写" },
+    { id: "sql.tables", label: "提取表名", hint: "只解析，不连库" },
   ],
   url: [
-    { id: "url.open", label: "Open in Browser" },
-    { id: "url.strip_query", label: "Copy without Query" },
-    { id: "url.domain", label: "Extract Domain" },
+    { id: "url.strip_query", label: "去掉 query" },
+    { id: "url.domain", label: "提取域名" },
   ],
-  code: [{ id: "code.wrap_selinux", label: "Wrap" }],
-  text: [{ id: "text.trim", label: "Trim" }],
-  ip: [{ id: "ip.copy", label: "Copy" }],
-  exception: [{ id: "exception.first_frame", label: "First Frame" }],
-  commit: [{ id: "commit.copy", label: "Copy" }],
-  markdown: [{ id: "markdown.outline", label: "Outline" }],
-  image: [{ id: "image.save", label: "Save As…" }],
+  uuid: [
+    { id: "uuid.upper", label: "转大写" },
+    { id: "uuid.lower", label: "转小写" },
+    { id: "uuid.no_dashes", label: "去横线", hint: "MySQL bin(16) 用这个" },
+  ],
+  // text / code 挂的是 base64 编码类动作 —— 与 Rust 侧一致
+  text: [
+    { id: "b64.encode", label: "编码", hint: "任意文本 → Base64" },
+    { id: "b64.encode_urlsafe", label: "编码 (url-safe)", hint: "字母表 -_ 而非 +/" },
+  ],
+  code: [
+    { id: "b64.encode", label: "编码", hint: "任意文本 → Base64" },
+    { id: "b64.encode_urlsafe", label: "编码 (url-safe)", hint: "字母表 -_ 而非 +/" },
+  ],
+  ip: [],
+  commit: [],
+  exception: [],
+  markdown: [],
+  image: [],
+};
+
+/**
+ * mock 侧的最小实现。真的变换在 Rust 里，这里只挑几个纯 JS 能做的，
+ * 让浏览器模式下工具条不是死的。
+ *
+ * 没实现的动作返回「这个后端没实现」而不是崩掉：mock 的定位是
+ * 调交互，不是复刻后端
+ */
+const MOCK_RUNNERS: Record<string, (s: string) => string> = {
+  "json.format": (s) => JSON.stringify(JSON.parse(s), null, 2),
+  "json.format4": (s) => JSON.stringify(JSON.parse(s), null, 4),
+  "json.minify": (s) => JSON.stringify(JSON.parse(s)),
+  "b64.encode": (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))),
+  "b64.encode_urlsafe": (s) =>
+    MOCK_RUNNERS["b64.encode"](s).replace(/\+/g, "-").replace(/\//g, "_"),
+  "b64.decode": (s) => new TextDecoder().decode(Uint8Array.from(atob(s), (c) => c.charCodeAt(0))),
+  "uuid.upper": (s) => s.trim().toUpperCase(),
+  "uuid.lower": (s) => s.trim().toLowerCase(),
+  "uuid.no_dashes": (s) => s.trim().replace(/-/g, ""),
+  "url.domain": (s) => {
+    try {
+      const h = new URL(s.trim()).hostname;
+      return h.replace(/^www\./, "");
+    } catch {
+      return s.trim();
+    }
+  },
+  "url.strip_query": (s) => {
+    const i = s.indexOf("?");
+    return i < 0 ? s : s.slice(0, i);
+  },
+  "sql.upper": (s) =>
+    s.replace(/\b(select|from|where|join|insert|into|values|update|set|delete|order|group|by)\b/gi,
+      (w) => w.toUpperCase()),
+  "sql.lower": (s) =>
+    s.replace(/\b(select|from|where|join|insert|into|values|update|set|delete|order|group|by)\b/gi,
+      (w) => w.toLowerCase()),
 };
 
 let settings: Settings = {
@@ -330,14 +383,32 @@ export const mockApi: ClipboardApi = {
   },
 
   async availableActions(t) {
-    return delay(ACTIONS[t] ?? [{ id: "copy", label: "Copy" }]);
+    return delay(ACTIONS[t] ?? []);
   },
 
-  async runToolboxAction(_id, actionId): Promise<ActionResult> {
-    return delay({
-      ok: false,
-      error: `mock 后端：动作 "${actionId}" 尚未实现，将在阶段 6 落到 Rust 侧。`,
-    });
+  async runToolboxAction(id, actionId): Promise<ActionResult> {
+    const run = MOCK_RUNNERS[actionId];
+    if (!run) {
+      return delay({
+        ok: false,
+        error: `mock 后端没有实现「${actionId}」，用 pnpm tauri dev 看真的`,
+      });
+    }
+    const item = db.find((x) => x.id === id);
+    if (!item) return delay({ ok: false, error: `mock 后端：第 ${id} 条不存在` });
+    try {
+      // 与 Rust 侧同约定：结果「写回剪贴板」，返回的是一句摘要。
+      // 摘要的措辞也照着 Rust 那边的形状写（label + 体积 + 去向），
+      // 这样同一句断言在两个后端下都成立
+      const value = run(item.content);
+      const label = ACTIONS[item.contentType].find((a) => a.id === actionId)?.label ?? actionId;
+      return delay({
+        ok: true,
+        value: `mock：${label} ${value.length} 字符，已复制到剪贴板（mock 不真的写）`,
+      });
+    } catch (e) {
+      return delay({ ok: false, error: `mock：${e instanceof Error ? e.message : String(e)}` });
+    }
   },
 
   async getSettings() {

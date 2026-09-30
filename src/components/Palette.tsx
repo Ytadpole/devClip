@@ -181,20 +181,32 @@ export function Palette() {
           {/* 列表（虚拟化，见 VirtualList） */}
           <VirtualList />
 
-          {/* 工具箱动作条 */}
+          {/* 工具箱动作条。列表来自 availableActions()，
+              前端不认具体类型（见 AGENTS.md 的两咽喉点）。
+              data-toolbox 是给 e2e 用的稳定钩子 —— 靠按钮文字
+              找元素的话，改一次文案就得改一次测试 */}
           {selected && s.actions.length > 0 && (
-            <div className="flex items-center gap-1.5 border-t border-white/10 px-3 py-2">
+            <div
+              data-toolbox=""
+              className="flex items-center gap-1.5 border-t border-white/10 px-3 py-2"
+            >
               <span className="text-[11px] text-zinc-600">工具箱</span>
               {s.actions.map((a) => (
                 <button
                   key={a.id}
                   type="button"
+                  // title 而不是行内文字：按钮条已经贴着窗口边，
+                  // 再塞说明会把状态栏挤掉。悬停能看到就够 ——
+                  // 而 JWT「base64 不是加密」这类必须看到的话，
+                  // 悬停是唯一不破坏布局的位置
+                  title={a.hint}
                   onClick={() => void s.runAction(selected, a.id)}
                   className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-300 transition-colors hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-sky-200"
                 >
                   {a.label}
                 </button>
               ))}
+              <span className="ml-auto text-[11px] text-zinc-700">结果写入剪贴板</span>
             </div>
           )}
 

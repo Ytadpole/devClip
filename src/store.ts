@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 import { api, backendName } from "./lib/backend";
-import type { ClipboardItem, ContentType, ToolboxAction } from "./lib/api";
+import type { ActionResult, ClipboardItem, ContentType, ToolboxAction } from "./lib/api";
 
 /** 搜索防抖。docs/06 定的是 80ms：再小则每个击键都打一次后端，
  * 再大则能感觉到「搜索不跟手」。 */
@@ -247,8 +247,24 @@ export const useStore = create<State>((set, get) => ({
     get().say("已删除");
   },
 
+  /**
+   * 跑一个工具箱动作。
+   *
+   * 两种失败要分开：动作本身算不出来时后端返回 `{ ok: false }`
+   * （那是动作给的、能指导下一步的中文），而 invoke 整个失败
+   * （条目没了、数据库锁着）才走 attempt 的兜底。
+   *
+   * 动作成功后**不刷新列表** —— 结果写的是系统剪贴板，
+   * Rust 侧用 SelfWrite 挡掉了自己这一次写入，历史里不会多出新条目
+   */
   async runAction(item, actionId) {
-    const r = await api.runToolboxAction(item.id, actionId);
+    let r: ActionResult;
+    try {
+      r = await api.runToolboxAction(item.id, actionId);
+    } catch (e) {
+      get().say(errorText(e) || "动作执行失败", "err");
+      return;
+    }
     get().say(r.ok ? r.value : r.error, r.ok ? "ok" : "err");
   },
 
