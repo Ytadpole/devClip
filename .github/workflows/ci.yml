@@ -43,6 +43,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # cache: pnpm 要求执行时已有 pnpm（setup-node 要跑 pnpm store
+      # path 算缓存目录），所以先装 pnpm 再进 setup-node
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -57,9 +61,6 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
-
-      - name: 安装 pnpm
-        run: corepack enable
 
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
@@ -93,11 +94,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - name: 检查 Tauri 应用
         working-directory: src-tauri
