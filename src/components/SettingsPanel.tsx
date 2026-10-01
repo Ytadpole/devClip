@@ -6,7 +6,7 @@ import type { Settings, Theme } from "../lib/api";
 type Draft = Pick<Settings, "retentionDays" | "maxItems" | "maxImageBytes" | "sensitiveAutoExpire">;
 
 /**
- * 设置页。盖在调色板列表上，Esc 退回。
+ * 设置页。盖在面板列表上，Esc 退回。
  *
  * 字段只放 docs/06 阶段 7 清单点名的那些，外加主题。
  *

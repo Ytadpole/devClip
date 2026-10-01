@@ -47,7 +47,7 @@ interface State {
   favoriteOnly: boolean;
   /** 含敏感信息分组。默认关，见 api.ts Query 的说明 */
   sensitive: boolean;
-  /** 调色板当前视图。设置页盖在列表上，Esc 退回 */
+  /** 面板当前视图。设置页盖在列表上，Esc 退回 */
   view: "list" | "settings";
   /** 设置页的草稿来源。打开设置页时拉一次 */
   settings: Settings | null;
@@ -182,7 +182,7 @@ export const useStore = create<State>((set, get) => ({
     // 系统主题变了要重算。回调是幂等的，React 严格模式下多注册一个
     // 监听也只是重复 apply 一次，所以不费劲去重
     onSystemChange(() => apply(get().theme));
-    // 主题不能等用户打开设置页才生效，那意味着每次呼出调色板
+    // 主题不能等用户打开设置页才生效，那意味着每次呼出面板
     // 都要先进设置页一趟
     void get().loadTheme();
     try {

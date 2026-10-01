@@ -80,7 +80,7 @@ export function Palette() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        // 三级逐层退出：菜单 → 搜索词 → 收起调色板。
+        // 三级逐层退出：菜单 → 搜索词 → 收起面板。
         // 最后一级的「收起」在浏览器里是空操作，e2e 跑的就是那条路
         if (st.menu) st.closeMenu();
         else if (st.query) st.setQuery("");

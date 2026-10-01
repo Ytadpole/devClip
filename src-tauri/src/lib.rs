@@ -32,7 +32,7 @@ use tauri::{Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use toolbox::ToolboxAction;
 
-/// 调色板弹出前的前台应用，粘贴时要回到那里。
+/// 面板弹出前的前台应用，粘贴时要回到那里。
 ///
 /// 不能用 item.source_app —— 那是内容当初被复制时的来源。
 /// 用户多半是在编辑器里按快捷键，却要粘上周在终端里复制的 JSON，
@@ -236,7 +236,7 @@ fn item_count(state: State<Db>) -> Result<i64, String> {
     repo::count(&c).map_err(|e| err("统计失败", e))
 }
 
-/// 收起调色板。Esc 的第三级 —— 菜单没开、搜索框也是空的时候
+/// 收起面板。Esc 的第三级 —— 菜单没开、搜索框也是空的时候
 ///
 /// 走自定义命令而不是前端的 getCurrentWindow().hide()：
 /// 后者要用到 core:window:allow-hide 权限，等于把窗口控制权整个交给前端；
@@ -268,7 +268,7 @@ fn copy_to_clipboard(
     Ok(())
 }
 
-/// 粘到弹出调色板前的前台应用。
+/// 粘到弹出面板前的前台应用。
 ///
 /// 顺序不能换：先写剪贴板，再收起自己的窗口把焦点让出去，
 /// 目标应用到前台之后再等它稳定，最后才发 ⌘V。
@@ -302,7 +302,7 @@ async fn paste(
     let back = unpoison(&target.0).take();
     if let Some(bundle) = back {
         if let Err(e) = clipboard::activate(&bundle) {
-            // 窗口已经藏起来了，不还原的话用户只会看到调色板凭空消失，
+            // 窗口已经藏起来了，不还原的话用户只会看到面板凭空消失，
             // 报错文案根本没人看得见
             show_palette(&app);
             return Err(e);
@@ -348,7 +348,7 @@ fn available_actions(content_type: String) -> Vec<ToolboxAction> {
 /// 跑一个工具箱动作。返回的是**一句摘要**，不是结果本身。
 ///
 /// 结果已经写进系统剪贴板了：工具箱的用处就是「变换完直接粘」，
-/// 而调色板状态栏只有一行、2.6 秒后自动消失 —— 塞不下格式化后的 JSON。
+/// 而面板状态栏只有一行、2.6 秒后自动消失 —— 塞不下格式化后的 JSON。
 /// 写剪贴板前必须在 `SelfWrite` 记一笔，否则监听线程会把这个
 /// 结果当成用户在别处复制的内容，又存一条
 #[tauri::command]
@@ -519,7 +519,7 @@ fn spawn_expiry_task(app: tauri::AppHandle) {
         .expect("起过期清理线程失败");
 }
 
-// ── 窗口与快捷键 ─────────────────────────────────────────────────/// 让调色板显形。窗口启动时是隐藏的（见 tauri.conf.json），
+// ── 窗口与快捷键 ─────────────────────────────────────────────────/// 让面板显形。窗口启动时是隐藏的（见 tauri.conf.json），
 /// 全靠快捷键呼出来
 fn show_palette(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -541,7 +541,7 @@ fn show_palette(app: &tauri::AppHandle) {
 /// 快捷键的显隐切换。记下前台应用：用户多半是从别的应用按快捷键过来的，
 /// 粘贴时要回到那里。自己的 bundle id 要排除掉 —— 从 Dock 点开应用后
 /// 我们会是前台，此时按快捷键如果把 DevClip 自己记进去，
-/// 粘贴时就会激活自己，⌘V 按在调色板上
+/// 粘贴时就会激活自己，⌘V 按在面板上
 fn toggle_palette(app: &tauri::AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
@@ -550,7 +550,7 @@ fn toggle_palette(app: &tauri::AppHandle) {
         let _ = w.hide();
         return;
     }
-    // 必须在 show_palette 之前取：调色板一旦显示就会抢到焦点，
+    // 必须在 show_palette 之前取：面板一旦显示就会抢到焦点，
     // 那时再问前台窗口，问到的已经是 DevClip 自己
     if let Some(target) = frontmost_target() {
         if !is_own_window(app, &target) {
@@ -581,10 +581,10 @@ pub fn frontmost_target() -> Option<String> {
 
 /// 这是不是 DevClip 自己的窗口。
 ///
-/// 调色板呼出时会抢到焦点，而 X11 上 `XSetInputFocus` 之后
+/// 面板呼出时会抢到焦点，而 X11 上 `XSetInputFocus` 之后
 /// `_NET_ACTIVE_WINDOW` 指向的就是我们自己。不排除的话会出现
 /// 两个后果：`source_app` 记成「DevClip」，以及粘贴时试图
-/// 唤起 DevClip 自己，⌘V/^V 全打在调色板上
+/// 唤起 DevClip 自己，⌘V/^V 全打在面板上
 fn is_own_window(app: &tauri::AppHandle, target: &str) -> bool {
     let Some(w) = app.get_webview_window("main") else {
         return false;
@@ -660,7 +660,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let show = MenuItem::with_id(app, "show", "显示调色板", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "显示面板", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 DevClip", true, None::<&str>)?;
     // 菜单里明说退出意味着什么。X11 上用户不知道「退出 = 剪贴板
@@ -681,7 +681,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             _ => {}
         })
-        // 左键直接开调色板，比「右键才出菜单」少一次点击
+        // 左键直接开面板，比「右键才出菜单」少一次点击
         .on_tray_icon_event(|tray, event| {
             use tauri::tray::TrayIconEvent;
             if let TrayIconEvent::Click {
@@ -767,7 +767,7 @@ pub fn run() {
         // 必须是第一个注册的插件：第二个实例的启动参数要尽早被拦下
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // 这段跑在**已有**实例的进程里。用户再开一次 DevClip，
-            // 意图就是要看到它 —— 把调色板弹到前面即可，
+            // 意图就是要看到它 —— 把面板弹到前面即可，
             // 两个实例各开一个数据库才真的是灾难
             show_palette(app);
         }))
@@ -775,7 +775,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
-                    // 松开时也会来一次事件，忽略，否则调色板会开一下就关
+                    // 松开时也会来一次事件，忽略，否则面板会开一下就关
                     if event.state == ShortcutState::Pressed {
                         toggle_palette(app);
                     }
@@ -807,12 +807,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 调色板是常驻后台的，关掉窗口只是收起，不是退出应用
+            // 面板是常驻后台的，关掉窗口只是收起，不是退出应用
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            // 点到调色板外面就收起 —— Spotlight/Raycast 的标准行为。
+            // 点到面板外面就收起 —— Spotlight/Raycast 的标准行为。
             // 粘贴流程会先显式 hide 再切走焦点，这里再收一次是无害的
             // no-op；托盘「设置…」在失焦之后仍会走到 show_palette，
             // 所以从托盘进设置不受影响

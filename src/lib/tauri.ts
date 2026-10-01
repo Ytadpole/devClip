@@ -101,7 +101,7 @@ export const tauriApi: ClipboardApi = {
 };
 
 /**
- * 收起调色板窗口。Esc 在浏览器里没有窗口可收，所以走 backend.ts 分派，
+ * 收起面板窗口。Esc 在浏览器里没有窗口可收，所以走 backend.ts 分派，
  * 别处不直接引这里
  */
 export const tauriWindow = {
@@ -137,7 +137,7 @@ export const tauriEvents = {
  * 阶段 4 起可用：把一条内容写进真实数据库。
  *
  * 不在 ClipboardApi 里 —— 那是历史记录的读写契约，而入库是
- * 阶段 5「剪贴板监听」内部要用的入口，前端调色板不直接用它。
+ * 阶段 5「剪贴板监听」内部要用的入口，前端面板不直接用它。
  * 单独挂在 tauriApi 上，等阶段 5 接上监听再收进 backend。
  */
 export const tauriDb = {

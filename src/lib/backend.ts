@@ -30,7 +30,7 @@ export const backendName =
 export const api: ClipboardApi = impls[backendName] ?? mockApi;
 
 /**
- * 收起调色板窗口。
+ * 收起面板窗口。
  *
  * 不塞进 ClipboardApi：那个契约讲的是剪贴板历史，窗口显隐是另一回事。
  * 但分派仍然留在这个文件里 —— 组件不直接引 ./tauri

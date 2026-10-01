@@ -23,7 +23,7 @@ use crate::repo;
 const POLL: Duration = Duration::from_millis(500);
 
 /// 单条入库的字节上限。往剪贴板里丢几十 MB 日志很常见，
-/// 全量入库会让 SQLite 迅速膨胀，而且这种内容在调色板里也没法看
+/// 全量入库会让 SQLite 迅速膨胀，而且这种内容在面板里也没法看
 const MAX_BYTES: usize = 1024 * 1024;
 
 /// 敏感内容的存活时间（docs/03：now + 60s）。
@@ -177,7 +177,7 @@ pub fn activate(bundle_id: &str) -> Result<(), String> {
     let Some(target) = target else {
         return Err(format!("目标应用未在运行（{bundle_id}）"));
     };
-    // 调色板窗口是 alwaysOnTop，普通 activate 会被压在它下面，
+    // 面板窗口是 alwaysOnTop，普通 activate 会被压在它下面，
     // 所以必须带上 IgnoringOtherApps 明确要求抢到最前。
     // 这个常量在 macOS 14 上废弃（系统自己决定层级），但 13 及更早仍然有效，
     // 而我们要支持到 13，所以这里明确压掉废弃警告
@@ -315,7 +315,7 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
                 // 敏感内容打标记入库，不再直接跳过。
                 //
                 // 早先这里是「不入库」，理由是历史明文落盘 —— 但那让
-                // 用户毫无感知：复制了密钥，打开调色板什么都没有，
+                // 用户毫无感知：复制了密钥，打开面板什么都没有，
                 // 只会以为 DevClip 坏了。按 docs/03 的设计改为入库打标：
                 // UI 打锁、默认搜不到（repo::list 排除）、60 秒后由
                 // 后台任务删除。暴露窗口从「永久」收敛到 60 秒，
@@ -336,7 +336,7 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
 fn capture(app: &tauri::AppHandle, text: &str, sensitive: bool) -> Option<repo::ClipboardItem> {
     // 取前台应用必须在锁外。系统调用一旦变慢（权限弹窗、进程起不来），
     // 就会把整把数据库锁一起拖住，界面和别的命令全卡死
-    // 前台应用是自己就记 null。调色板显示时 DevClip 是前台窗口，
+    // 前台应用是自己就记 null。面板显示时 DevClip 是前台窗口，
     // 记下来会让每条历史都写着「DevClip」，一个有用的字段就废了
     let source_app = frontmost_app().filter(|a| a != &app.config().identifier.to_string());
     // 设置快照也是「取完再碰数据库锁」：Mutex 上不做任何慢操作

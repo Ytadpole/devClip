@@ -253,7 +253,7 @@ where
 /// 返回 ID 而不是窗口名，这是与 macOS 版对齐的关键：
 /// macOS 拿的是 bundle id（稳定、唯一），X11 上对应的东西就是
 /// 窗口 ID。早先这里返回窗口标题，然后靠标题找回窗口 ——
-/// 而标题会变、可能重复，调色板自己抢到焦点时记下的还是
+/// 而标题会变、可能重复，面板自己抢到焦点时记下的还是
 /// 「DevClip」，回去根本匹配不上
 pub fn frontmost_window() -> Option<Window> {
     let (c, screen) = connect()?;
