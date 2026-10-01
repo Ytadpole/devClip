@@ -231,8 +231,10 @@ pub fn list(conn: &Connection, q: &Query) -> Result<Vec<ClipboardItem>, DbError>
 
     // 纯按最近复制时间排序 —— 收藏不再置顶（真机反馈：置顶让列表
     // 看起来不像时间序），收藏只靠星标与 favorite_only 筛选表达。
+    // id DESC 做平局裁决：同毫秒内插入的两条（快速连按）也要有
+    // 确定顺序，不能赌 SQLite 的返回——72b8503 的同族教训。
     // 与 mock 后端行为一致
-    sql.push_str(" ORDER BY c.last_copied_at DESC");
+    sql.push_str(" ORDER BY c.last_copied_at DESC, c.id DESC");
     sql.push_str(&format!(
         " LIMIT ?{} OFFSET ?{}",
         args.len() + 1,
