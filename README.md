@@ -18,19 +18,22 @@
         ┌──────────┼──────────┐
         ↓          ↓          ↓
    Clipboard    Toolbox      AI
-        │          │          │   (P2)
+        │          │          │   (P2，未做)
    History     JSON       Explain
    Search      SQL        Translate
    Favorite    JWT        Fix
-   Tags        Base64     Summarize
+   Tags (P1)   Base64     Summarize
                URL / UUID
 ```
 
+标签那一格是设计稿里留的 P1，`src/` 里还没有对应实现。
+
 ## 当前进度
 
-**阶段 0–4 完成，阶段 5 进行中。** 数据已从内存 mock 换成真实的
-SQLite + FTS5 本地库；剪贴板监听、全局快捷键、模拟粘贴与系统托盘
-也都落地了，现在打磨的是真机行为。
+**阶段 0–8 完成，阶段 6 差最后一步。** macOS 与 Linux(X11) 上剪贴板
+监听、全局快捷键、模拟粘贴、托盘常驻、敏感内容到期清理都已真机跑通。
+工具箱 19 个动作覆盖 8 种内容，「变换 + 写回剪贴板」通了，**自动粘贴
+没做** —— 变完还得自己切窗口按 ⌘V。Windows 监听与打包发布未开始。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -38,10 +41,15 @@ SQLite + FTS5 本地库；剪贴板监听、全局快捷键、模拟粘贴与系
 | 1 | UI + mock 数据 | ✅ |
 | 2 | 端口-适配器接线（换 tauri 后端） | ✅ |
 | 3 | `detect.rs` 内容识别器（纯 Rust） | ✅ 67 测试，准确率 100% |
-| 4 | SQLite + FTS5 历史记录 | ✅ 1000 条搜索 2.2ms |
-| 5 | 监听 + 快捷键 + 粘贴 + 托盘 | 进行中 |
+| 4 | SQLite + FTS5 历史记录 | ✅ 1000 条子串搜索 2.5ms |
+| 5 | 监听 + 快捷键 + 粘贴 + 托盘 | ✅ macOS / Linux 真机 |
+| 6 | 开发者工具箱 | 差最后一步：自动粘贴 |
+| 7 | 敏感信息 + 亮色主题 + 设置 | ✅ |
+| 8 | Linux(X11) Selection 接管 | ✅ 真机 5/5 |
+| 9 | Windows 监听 + 打包 | 未开始 |
+| 10 | CI 出包 + 发布 | 未开始，CI 只跑检查 |
 
-测试共 249 条：Rust 单测 219（`cargo test --lib`）+ 端到端 30
+测试共 252 条：Rust 单测 219（`cargo test --lib`）+ 端到端 33
 （`pnpm test`）。CI 跑三平台矩阵，另有一道 macOS 真机构建检查。
 
 数据落在 `~/.local/share/com.devclip.app/devclip.db`（WAL 模式）。
