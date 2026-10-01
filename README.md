@@ -33,7 +33,7 @@
 **阶段 0–8 完成，阶段 6 差最后一步。** macOS 与 Linux(X11) 上剪贴板
 监听、全局快捷键、模拟粘贴、托盘常驻、敏感内容到期清理都已真机跑通。
 工具箱 19 个动作覆盖 8 种内容，「变换 + 写回剪贴板」通了，**自动粘贴
-没做** —— 变完还得自己切窗口按 ⌘V。Windows 监听与打包发布未开始。
+没做** —— 变完还得自己切窗口按 ⌘V。Windows 侧的监听还没写。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -46,11 +46,12 @@
 | 6 | 开发者工具箱 | 差最后一步：自动粘贴 |
 | 7 | 敏感信息 + 亮色主题 + 设置 | ✅ |
 | 8 | Linux(X11) Selection 接管 | ✅ 真机 5/5 |
-| 9 | Windows 监听 + 打包 | 未开始 |
-| 10 | CI 出包 + 发布 | 未开始，CI 只跑检查 |
+| 9 | Windows 监听 | 未开始（打包已由 `release.yml` 覆盖） |
+| 10 | CI 出包 + 发布 | `release.yml` 已写，**一次都还没跑过**；macOS 未签名 |
 
 测试共 252 条：Rust 单测 219（`cargo test --lib`）+ 端到端 33
-（`pnpm test`）。CI 跑三平台矩阵，另有一道 macOS 真机构建检查。
+（`pnpm test`）。CI 跑三平台矩阵，另有一道 macOS 真机构建检查；
+推 `v*` tag 会走 `release.yml`，用 tauri-action 出三平台安装包。
 
 数据落在 `~/.local/share/com.devclip.app/devclip.db`（WAL 模式）。
 `cd src-tauri && cargo run --example seed` 可灌 1000 条假数据试搜索性能。
