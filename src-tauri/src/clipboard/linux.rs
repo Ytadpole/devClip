@@ -322,6 +322,16 @@ fn window_title(c: &RustConnection, win: Window) -> Option<String> {
 /// 走 ICCCM 的 `_NET_ACTIVE_WINDOW` 客户端消息，这是窗口管理器
 /// 认可的方式；单发 `XRaiseWindow` 在多数 WM 下会被忽略。
 ///
+/// ## 两个静默失效的坑
+///
+/// 这条消息有两个地方写错都不会报错，只是 WM 装没看见，
+/// 实测在 Muffin 上两种写法都拿不到焦点：
+///
+/// 1. **`window` 字段才是要激活的窗口**，不是 `data`。写成 root
+///    等于喊话「激活根窗口」，`win` 只剩查 map_state 一个用途
+/// 2. **掩码必须带 `SUBSTRUCTURE_REDIRECT`**。WM 在 root 上选的
+///    是这个，掩码里没有它，消息根本不会送到 WM 手里
+///
 /// `data[0] = 2` 是「由用户操作发起」的源码指示，不带它的话
 /// 不少 WM 会当成程序自顾自的请求而直接忽略
 pub fn activate_window(win: Window) -> Result<(), String> {
@@ -339,19 +349,37 @@ pub fn activate_window(win: Window) -> Result<(), String> {
     }
 
     let active_atom = intern(&c, "_NET_ACTIVE_WINDOW").ok_or("拿不到 _NET_ACTIVE_WINDOW 原子")?;
-    let data = ClientMessageData::from([2, CurrentTime, 0, 0, 0]);
-    let ev = ClientMessageEvent::new(32, root, active_atom, data);
-    c.send_event(
-        false,
-        root,
-        EventMask::SUBSTRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE,
-        ev,
-    )
-    .map_err(|e| format!("发送激活事件失败: {e}"))?
-    .check()
-    .map_err(|e| format!("发送激活事件失败: {e}"))?;
+    let ev = activation_event(win, active_atom);
+    c.send_event(false, root, activation_mask(), ev)
+        .map_err(|e| format!("发送激活事件失败: {e}"))?
+        .check()
+        .map_err(|e| format!("发送激活事件失败: {e}"))?;
     c.flush().map_err(|e| format!("发送激活事件失败: {e}"))?;
     Ok(())
+}
+
+/// 发消息时要带的掩码。
+///
+/// `SUBSTRUCTURE_REDIRECT` 不能少：WM 是在 root 上选它的，
+/// 掩码里没有这一位，消息压根不会送到 WM 手里 —— 而 X 协议
+/// 对「目标窗口没选这个掩码」是静默丢弃的，不报任何错
+fn activation_mask() -> EventMask {
+    EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT
+}
+
+/// 造那条激活消息。
+///
+/// 单独成函数是为了能脱开 X 服务器单测：这两个字段写错都不会
+/// 有任何报错，只表现为「WM 装没看见」，而这条消息在 CI 的
+/// macOS / Windows runner 上根本不会发出去
+fn activation_event(win: Window, active_atom: Atom) -> ClientMessageEvent {
+    // data[0] 是源码指示：2 = 由用户操作发起。不带它不少 WM 会
+    // 当成程序自顾自的请求忽略。data[1] 是时间戳，CurrentTime（0）
+    // 表示「现在」；data[2] 是请求方当前的活动窗口，没有就填 0。
+    // **要激活的窗口在 window 字段，不在这里** —— 放错位置是
+    // 这段代码曾经的写法，等于喊话「激活根窗口」
+    let data = ClientMessageData::from([2, CurrentTime, 0, 0, 0]);
+    ClientMessageEvent::new(32, win, active_atom, data)
 }
 
 fn intern(c: &RustConnection, name: &str) -> Option<Atom> {
@@ -520,5 +548,54 @@ mod tests {
             let sel = clipboard_atom(&c).unwrap_or(0);
             let _ = owner_of(&c, sel);
         }
+    }
+
+    /// 防回归：激活消息的 window 字段必须是要激活的那个窗口。
+    ///
+    /// 这段代码曾经把 root 写进 window 字段，win 只用来查
+    /// map_state —— 消息发出去完全合法，WM 也收到了，只是内容
+    /// 是「请激活根窗口」。后果是面板永远拿不到焦点，于是永远
+    /// 等不到失焦事件，收起功能整个走不通，而且一行错都不报
+    ///
+    /// **这条只覆盖消息的构造，覆盖不到调用点。** 把 root 传给
+    /// `activation_event` 而不是 win 的那种错，纯函数测不出来，
+    /// 因为它得有一个 X 服务器才能观察到 WM 的反应。改这行
+    /// 的时候要自己看一眼第一参数
+    #[test]
+    fn activation_event_carries_the_target_window() {
+        let win: Window = 0x2c000d;
+        let ev = activation_event(win, 4242);
+        assert_eq!(ev.window, win, "window 字段必须是要激活的窗口");
+        assert_eq!(ev.type_, 4242, "type 字段是 _NET_ACTIVE_WINDOW 的原子值");
+        assert_eq!(ev.format, 32, "必须是 32 位字长，WM 按 CARDINAL 解读");
+    }
+
+    /// 防回归：data[0] 是源码指示，不能丢。
+    ///
+    /// 填 1（application）或 2（pager）实测都能过；填 0 的话
+    /// 不少 WM 当成程序自发请求直接忽略
+    #[test]
+    fn activation_event_declares_its_source() {
+        let ev = activation_event(1, 4242);
+        let data = ev.data.as_data32();
+        assert_eq!(data[0], 2, "data[0] 是源码指示，应当为 2");
+        assert_eq!(data[1], CurrentTime, "data[1] 是时间戳");
+    }
+
+    /// 防回归：掩码里必须有 SUBSTRUCTURE_REDIRECT。
+    ///
+    /// WM 在 root 上选的是它，掩码缺这一位消息就送不到 WM 手里，
+    /// 而 X 服务器对「目标没选这个掩码」是静默丢弃的
+    #[test]
+    fn activation_mask_reaches_the_window_manager() {
+        let mask = activation_mask();
+        assert!(
+            mask.contains(EventMask::SUBSTRUCTURE_REDIRECT),
+            "掩码缺 SUBSTRUCTURE_REDIRECT，消息送不到 WM"
+        );
+        assert!(
+            mask.contains(EventMask::SUBSTRUCTURE_NOTIFY),
+            "掩码缺 SUBSTRUCTURE_NOTIFY"
+        );
     }
 }
