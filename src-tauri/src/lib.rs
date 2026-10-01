@@ -802,6 +802,13 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // 点到调色板外面就收起 —— Spotlight/Raycast 的标准行为。
+            // 粘贴流程会先显式 hide 再切走焦点，这里再收一次是无害的
+            // no-op；托盘「设置…」在失焦之后仍会走到 show_palette，
+            // 所以从托盘进设置不受影响
+            if let tauri::WindowEvent::Focused(false) = event {
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_items,
