@@ -133,7 +133,7 @@ export function VirtualList() {
     <Command.List
       ref={viewport}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      className="max-h-[min(420px,50vh)] overflow-y-auto overscroll-contain p-1.5"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
     >
       {loading ? (
         <div className="px-3 py-10 text-center text-sm text-faint">加载中…</div>

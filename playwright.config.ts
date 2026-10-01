@@ -20,8 +20,8 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      // 视口要够高，否则 max-h-[min(420px,50vh)] 会取到 50vh，
-      // 窗口行数变化会让行数上限的断言跟着漂
+      // 视口高度决定列表视口（面板 h-screen，列表 flex-1 占满剩余
+      // 高度），渲染行数随之变化，行数上限的断言与它联动
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } },
     },
   ],

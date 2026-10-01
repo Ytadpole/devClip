@@ -111,8 +111,8 @@ export function Palette() {
   const filtered = s.types.length > 0 || s.favoriteOnly || s.sensitive;
 
   return (
-    <div className="flex min-h-screen justify-center pt-[11vh] text-fg antialiased">
-      <div className="w-full max-w-[680px] px-4">
+    <div className="flex h-screen text-fg antialiased">
+      <div className="h-full w-full">
         {s.view === "settings" ? (
           <SettingsPanel />
         ) : (
@@ -126,7 +126,7 @@ export function Palette() {
             if (i >= 0) useStore.getState().select(i);
           }}
           data-panel-root
-          className="overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+          className="flex h-full flex-col overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
           {/* 搜索行兼做拖拽区：按住空白处可移动面板，输入框点击不受影响 */}
           <div data-tauri-drag-region className="flex items-center gap-3 border-b border-line px-4">
@@ -151,10 +151,19 @@ export function Palette() {
                 清除
               </button>
             )}
+            {/* 可见的拖动把手：输入框要留给打字，拖面板认这个把手
+                和行内空白 */}
+            <span
+              data-tauri-drag-region
+              title="拖动移动面板"
+              className="cursor-grab select-none px-1 text-base leading-none text-faint hover:text-fg active:cursor-grabbing"
+            >
+              ⠿
+            </span>
           </div>
 
-          {/* 类型筛选 */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-3 py-2">
+          {/* 类型筛选。整行也是拖拽区（chip 与按钮是子元素不受影响） */}
+          <div data-tauri-drag-region className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-3 py-2">
             <button
               type="button"
               onClick={s.toggleFavoriteOnly}
