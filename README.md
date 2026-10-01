@@ -23,12 +23,14 @@
    Search      SQL        Translate
    Favorite    JWT        Fix
    Tags        Base64     Summarize
+               URL / UUID
 ```
 
 ## 当前进度
 
-**阶段 0–4 完成，下一步阶段 5。** 数据从内存 mock 换成了真实的
-SQLite + FTS5 本地库。
+**阶段 0–4 完成，阶段 5 进行中。** 数据已从内存 mock 换成真实的
+SQLite + FTS5 本地库；剪贴板监听、全局快捷键、模拟粘贴与系统托盘
+也都落地了，现在打磨的是真机行为。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -36,8 +38,11 @@ SQLite + FTS5 本地库。
 | 1 | UI + mock 数据 | ✅ |
 | 2 | 端口-适配器接线（换 tauri 后端） | ✅ |
 | 3 | `detect.rs` 内容识别器（纯 Rust） | ✅ 67 测试，准确率 100% |
-| 4 | SQLite + FTS5 历史记录 | ✅ 92 测试，1000 条搜索 2.2ms |
-| 5 | 监听 + 快捷键 + 粘贴 | ⬜ |
+| 4 | SQLite + FTS5 历史记录 | ✅ 1000 条搜索 2.2ms |
+| 5 | 监听 + 快捷键 + 粘贴 + 托盘 | 进行中 |
+
+测试共 249 条：Rust 单测 219（`cargo test --lib`）+ 端到端 30
+（`pnpm test`）。CI 跑三平台矩阵，另有一道 macOS 真机构建检查。
 
 数据落在 `~/.local/share/com.devclip.app/devclip.db`（WAL 模式）。
 `cd src-tauri && cargo run --example seed` 可灌 1000 条假数据试搜索性能。
@@ -57,7 +62,16 @@ pnpm test      # 端到端验收（Playwright，会自动起 dev server）
 pnpm exec playwright install chromium
 ```
 
-`pnpm tauri dev` 需要 Rust 与 webkit2gtk，尚未安装。
+上面的命令只跑前端。起真实窗口需要 Rust 与 webkit2gtk，Linux 上
+装齐这几个包（与 CI 一致）：
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev \
+  librsvg2-dev libxdo-dev patchelf
+```
+
+之后 `pnpm tauri dev` 起开发窗口，`pnpm tauri build` 产出
+deb / rpm / AppImage 三种包。
 
 ## 技术栈
 
@@ -75,7 +89,7 @@ pnpm exec playwright install chromium
 
 ## 文档
 
-设计文档位于 [`docs/`](docs/)，**因用户要求暂不入版本库**，仅存在于本地工作副本。
+设计文档与开发日志都在 [`docs/`](docs/) 里，已入库。
 
 | 文档 | 内容 |
 |---|---|
@@ -85,6 +99,7 @@ pnpm exec playwright install chromium
 | [04 内容识别与工具箱](docs/04-内容识别与工具箱.md) | 13 条识别规则 + 操作矩阵 |
 | [05 平台差异与风险](docs/05-平台差异与风险.md) | 剪贴板/粘贴/快捷键三平台差异与降级策略 |
 | [06 路线图与任务清单](docs/06-路线图与任务清单.md) | 阶段划分、完成标准、风险台账 |
+| [DEVLOG](docs/DEVLOG.md) | 按提交记录的开发日志，一条提交对一条 |
 
 ## 平台路线
 
