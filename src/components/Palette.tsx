@@ -6,6 +6,7 @@ import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
 import { hideWindow, onOpenSettings, startWindowDrag } from "../lib/backend";
+import { resolve } from "../lib/theme";
 import type { ContentType } from "../lib/api";
 
 /** 筛选栏只展示高频类型，完整列表留给设置页 */
@@ -187,6 +188,12 @@ export function Palette() {
                 清除
               </button>
             )}
+            {/* 换主题：不想为了切个颜色先退进设置页。图标画的是
+                「点了会变成什么样」—— 现在亮色就画月亮（点了变暗），
+                反之亦然，比反过来画好读
+                data-theme-toggle 给 e2e 当稳定钩子，别改成靠
+                aria-label 找：文案会改，钩子不会 */}
+            <ThemeToggle />
             {/* 可见的拖动把手：输入框要留给打字，拖面板认这个把手
                 和行内空白 */}
             <span
@@ -329,5 +336,65 @@ export function Palette() {
 
       <ContextMenu />
     </div>
+  );
+}
+
+/**
+ * 搜索行右侧的换主题按钮
+ *
+ * 只做「深色 ⇄ 亮色」两档。三档里的「跟随系统」仍然只在设置页里
+ * 选——从面板上点一下就丢掉「跟随系统」这个意图太突兀，宁可让用户
+ * 想要自动跟随时明确去设置页选一次。
+ *
+ * 翻转的基准是 `resolve()` 出来的**当前实际外观**，不是设置里存的
+ * 原始取值：设置是「跟随系统」而系统此刻是亮色时，点一下应该得到
+ * 深色（用户看到的是「我要另一个样子」），而不是把 system 原样
+ * 翻成某个固定值。
+ */
+function ThemeToggle() {
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  const now = resolve(theme);
+  const next = now === "dark" ? "light" : "dark";
+
+  return (
+    <button
+      type="button"
+      data-theme-toggle=""
+      onClick={() => void setTheme(next)}
+      aria-label={next === "dark" ? "切换到深色" : "切换到亮色"}
+      title={next === "dark" ? "切换到深色" : "切换到亮色"}
+      className="shrink-0 rounded p-1 text-faint transition-colors hover:bg-hover hover:text-fg"
+    >
+      {now === "dark" ? (
+        // 现在是深色，画月亮：点一下变暗色系之外的那一档
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+          aria-hidden="true"
+        >
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      )}
+    </button>
   );
 }
