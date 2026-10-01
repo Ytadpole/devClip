@@ -111,7 +111,7 @@ export function Palette() {
   const filtered = s.types.length > 0 || s.favoriteOnly || s.sensitive;
 
   return (
-    <div className="flex min-h-screen justify-center bg-canvas pt-[11vh] text-fg antialiased">
+    <div className="flex min-h-screen justify-center pt-[11vh] text-fg antialiased">
       <div className="w-full max-w-[680px] px-4">
         {s.view === "settings" ? (
           <SettingsPanel />
@@ -126,7 +126,7 @@ export function Palette() {
             if (i >= 0) useStore.getState().select(i);
           }}
           data-panel-root
-          className="overflow-hidden rounded-xl bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+          className="overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
           {/* 搜索框 */}
           <div className="flex items-center gap-3 border-b border-line px-4">

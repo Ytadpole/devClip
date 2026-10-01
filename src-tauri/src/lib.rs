@@ -523,6 +523,9 @@ fn spawn_expiry_task(app: tauri::AppHandle) {
 /// 全靠快捷键呼出来
 fn show_palette(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        // 配置里的 center: true 对无边框窗口不可靠（实测每次落点都不
+        // 一样，甚至顶到左上角），显示时显式居中一次
+        let _ = w.center();
         let _ = w.show();
         let _ = w.set_focus();
     }
