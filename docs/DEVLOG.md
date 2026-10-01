@@ -1126,6 +1126,13 @@ server」路径，根本没验证收尾。杀掉残留重跑，拿到「自起 s
 
 ---
 
+## 1538021 · 2026-10-01 · docs: 补记 e2e 挂死 DEVLOG
+
+纯补录：把 82a03bd 一条的记录写进本文件，本身没有代码改动，
+不再展开。
+
+---
+
 ## a7b8df2 · 2026-10-01 · fix: ci 补装 libxdo-dev，linux 链接要它
 
 ubuntu 挂在 `cargo test --lib` 的链接阶段：`rust-lld: unable to find
@@ -1136,3 +1143,34 @@ setup-node，从未活到链接这一步，所以一直没暴露。
 
 本地 216 条单测连同链接全过（本机早装了 libxdo-dev），CI 缺的只有
 这一个系统包。
+
+---
+
+## 02e4c04 · 2026-10-01 · docs: 补记 libxdo DEVLOG
+
+纯补录：把 a7b8df2 一条的记录写进本文件，本身没有代码改动，
+不再展开。
+
+---
+
+## cf4a85b · 2026-10-01 · ci: 打 tag 出三平台 release 包
+
+CI 只验证不出包。新增独立 release workflow：推 `v*` tag 触发，
+tauri-action 三平台各出安装包挂 GitHub Release —— Linux
+deb/rpm/AppImage、Windows msi/nsis、macOS dmg。
+
+**tagName 用 `github.ref_name` 而不是官方示例的 `v__VERSION__`。**
+后者按 tauri.conf.json 的 version 填占位符，tag 与配置一脱节，
+action 会凭空去建另一个 tag 的 release。版本以 tag 为单一事实
+来源，配置文件的 version 只是初始值。
+
+**macOS 打 universal。** macos-latest 是 Apple Silicon 机器，默认
+只出 arm64 包；真机里还有 macOS 13 的老设备（2da5db1），多花几分
+钟换 Intel 兼容。
+
+**ci.yml 的两个教训直接带过来**：pnpm/action-setup 排在
+setup-node 之前；Linux 依赖清单带 libxdo-dev（muda 链接要）。
+
+**未签名，也未实测。** macOS 包没有开发者证书，Gatekeeper 会拦
+（右键 → 打开）。workflow 只有推 tag 后才能真跑通，YAML 与
+action 输入是离线核对的——第一次打 tag 就是它的首跑。
