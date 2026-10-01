@@ -128,8 +128,8 @@ export function Palette() {
           data-panel-root
           className="overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
-          {/* 搜索框 */}
-          <div className="flex items-center gap-3 border-b border-line px-4">
+          {/* 搜索行兼做拖拽区：按住空白处可移动面板，输入框点击不受影响 */}
+          <div data-tauri-drag-region className="flex items-center gap-3 border-b border-line px-4">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-faint">
               <circle cx="11" cy="11" r="7" />
               <path strokeLinecap="round" d="M20 20l-3.5-3.5" />
@@ -247,8 +247,8 @@ export function Palette() {
             </div>
           )}
 
-          {/* 底部：状态 / 快捷键提示 */}
-          <div className="flex items-center gap-3 border-t border-line px-3 py-2 text-[11px] text-faint">
+          {/* 底部：状态 / 快捷键提示。同为拖拽区 */}
+          <div data-tauri-drag-region className="flex items-center gap-3 border-t border-line px-3 py-2 text-[11px] text-faint">
             {s.status ? (
               <span
                 data-status={s.status.kind}

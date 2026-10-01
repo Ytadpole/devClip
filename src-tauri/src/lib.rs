@@ -521,11 +521,23 @@ fn spawn_expiry_task(app: tauri::AppHandle) {
 
 // ── 窗口与快捷键 ─────────────────────────────────────────────────/// 让面板显形。窗口启动时是隐藏的（见 tauri.conf.json），
 /// 全靠快捷键呼出来
+/// 用户拖动后的窗口位置（物理坐标）。只在内存里记：应用常驻，这个
+/// 状态覆盖绝大多数场景；跨重启回到居中，要跨重启再加进 settings。
+static LAST_WIN_POS: std::sync::Mutex<Option<(i32, i32)>> = std::sync::Mutex::new(None);
+
 fn show_palette(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        // 配置里的 center: true 对无边框窗口不可靠（实测每次落点都不
-        // 一样，甚至顶到左上角），显示时显式居中一次
-        let _ = w.center();
+        // 用户拖过的位置优先；没拖过才居中。配置里的 center: true 对
+        // 无边框窗口不可靠（实测落点漂移甚至顶到左上角），不能依赖
+        let pos = *LAST_WIN_POS.lock().unwrap_or_else(|e| e.into_inner());
+        match pos {
+            Some((x, y)) => {
+                let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+            }
+            None => {
+                let _ = w.center();
+            }
+        }
         let _ = w.show();
         let _ = w.set_focus();
         // WM 的防焦点抢占可能吞掉第一次 set_focus（实测：焦点没拿到
@@ -807,6 +819,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // 拖动结束的落点记下来，下次呼出还回原位
+            if let tauri::WindowEvent::Moved(pos) = event {
+                if let Ok(mut slot) = LAST_WIN_POS.lock() {
+                    *slot = Some((pos.x, pos.y));
+                }
+            }
             // 面板是常驻后台的，关掉窗口只是收起，不是退出应用
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
