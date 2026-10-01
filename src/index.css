@@ -67,9 +67,12 @@ html[data-theme="light"] {
   --color-ghost: #a1a1aa;
 }
 
-/* color-scheme 决定原生控件的样子：滚动条、数字输入框的步进箭头 */
+/* color-scheme 决定原生控件的样子：滚动条、数字输入框的步进箭头。
+   背景必须显式透明：color-scheme dark 会让 UA 把根画布画成深色，
+   透明窗口里表现为一圈方形深底 */
 html {
   color-scheme: dark;
+  background: transparent;
 }
 
 html,
