@@ -1,0 +1,91 @@
+# release
+#
+# 推 tag（v*）触发，三平台各打安装包并挂到 GitHub Release：
+#   Linux   .deb / .rpm / .AppImage
+#   macOS   .dmg（universal：Apple Silicon 与 Intel 通吃）
+#   Windows .msi / .exe（NSIS）
+#
+# 不重复跑测试：打 tag 的 commit 应当已被 CI 验证过（ci.yml 不对
+# tag 触发，tag 通常打在 main 上已绿的 commit），这里只管构建出包
+#
+# ## 为什么 tagName 用 github.ref_name 而不是官方示例的 v__VERSION__
+#
+# 官方示例按 tauri.conf.json 的 version 填占位符，但那样 tag 与
+# 配置文件可能脱节：推了 v0.1.0 而配置里写着 0.2.0 时，action 会
+# 凭空创建 v0.2.0 的 release。直接用被推送的 tag，版本以 tag 为
+# 单一事实来源
+#
+# ## macOS 为什么打 universal
+#
+# macos-latest 是 Apple Silicon 机器，默认只出 arm64 包。补上
+# x86_64 target 的代价是这个 job 慢几分钟，换来 Intel Mac 可用；
+# 手头真机还有 macOS 13 的老设备（见 DEVLOG 2da5db1），稳妥起见
+# 打双架构
+#
+# ## macOS 包未签名
+#
+# 没有开发者证书，Gatekeeper 会拦：右键 → 打开，或
+# `xattr -cr /Applications/DevClip.app`。签名以后再补
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 与 ci.yml 同一个坑：cache: pnpm 要求执行时已有 pnpm
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Linux 构建依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - name: 装 macOS 双架构 target
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'DevClip ${{ github.ref_name }}'
+          releaseBody: '三平台安装包见下方 Assets。macOS 包未签名，首次打开需右键 → 打开。'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
