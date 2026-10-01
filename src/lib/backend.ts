@@ -39,6 +39,17 @@ export const hideWindow: () => Promise<void> =
   backendName === "tauri" ? tauriWindow.hide : () => Promise.resolve();
 
 /**
+ * 进入窗口拖动状态。搜索框上「点 vs 拖」的阈值判断在组件里，
+ * 这里只负责分派。mock 后端没有窗口可拖
+ */
+export const startWindowDrag: () => void =
+  backendName === "tauri"
+    ? () => {
+        void tauriWindow.startDragging();
+      }
+    : () => {};
+
+/**
  * 订阅托盘菜单的「设置」。mock 后端没有托盘，永不触发。
  * 与 hideWindow 同理：窗口层的事不进 ClipboardApi，分派留在这里
  */

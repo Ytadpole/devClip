@@ -108,6 +108,11 @@ export const tauriWindow = {
   hide(): Promise<void> {
     return invoke("hide_window");
   },
+  /** 进入窗口拖动。data-tauri-drag-region 由注入脚本处理；搜索框
+   * 这类「点 vs 拖」要自己判阈值的元素，在移动超限后调这里 */
+  startDragging(): Promise<void> {
+    return invoke("plugin:window|start_dragging");
+  },
 };
 
 /**

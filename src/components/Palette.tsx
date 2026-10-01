@@ -5,7 +5,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
-import { hideWindow, onOpenSettings } from "../lib/backend";
+import { hideWindow, onOpenSettings, startWindowDrag } from "../lib/backend";
 import type { ContentType } from "../lib/api";
 
 /** 筛选栏只展示高频类型，完整列表留给设置页 */
@@ -14,6 +14,35 @@ const QUICK_TYPES: ContentType[] = ["json", "sql", "code", "url", "jwt", "text"]
 export function Palette() {
   const s = useStore();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 搜索框兼做拖动热区：按下后移动超过阈值即进入窗口拖动，
+  // 原地点击（未超阈值）照常聚焦打字。阈值期间监听挂在 window 上，
+  // 鼠标移出输入框也能继续判定
+  const inputDrag = useRef<{ x: number; y: number } | null>(null);
+  const onInputMouseDown = (e: React.MouseEvent) => {
+    inputDrag.current = { x: e.screenX, y: e.screenY };
+    const onMove = (m: MouseEvent) => {
+      if (!inputDrag.current) return;
+      if (
+        Math.abs(m.screenX - inputDrag.current.x) > 5 ||
+        Math.abs(m.screenY - inputDrag.current.y) > 5
+      ) {
+        inputDrag.current = null;
+        cleanup();
+        startWindowDrag();
+      }
+    };
+    const onUp = () => {
+      inputDrag.current = null;
+      cleanup();
+    };
+    const cleanup = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     void useStore.getState().init();
@@ -138,6 +167,7 @@ export function Palette() {
               ref={inputRef}
               value={s.query}
               onValueChange={s.setQuery}
+              onMouseDown={onInputMouseDown}
               autoFocus
               placeholder="搜索历史记录…（⌘K 聚焦）"
               className="h-14 flex-1 bg-transparent text-[15px] text-fg-strong outline-none placeholder:text-faint"
