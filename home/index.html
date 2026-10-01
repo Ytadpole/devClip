@@ -416,11 +416,13 @@ footer a:hover{color:var(--fg)}
         </div>
         <p>
           <b>做了</b> Linux(X11) 已真机跑通并产出 deb / rpm / AppImage；
-          CI 三平台矩阵编译与测试。
+          CI 三平台矩阵编译与测试；另有 release workflow，推 <code>v*</code>
+          tag 用 tauri-action 出三平台安装包挂 GitHub Releases
+          （<b>一次都还没跑过</b>，首次打 tag 才是它的首跑）。
           <br><b>实现</b> X11 监听走 Selection 接管；macOS 与 Linux 的
           监听都在真机上跑过，Windows 的监听还没写。
-          <br><b>还差</b> 打包与发布：CI 现在只跑检查、不出产物，推 tag
-          自动出安装包和 GitHub Releases 都还没接。
+          <br><b>还差</b> macOS 包未签名未公证（Gatekeeper 会拦，得右键
+          打开），Windows 侧没写。
           <br><b>提升</b> 从自用工具变为可分发给任意开发者的产品。
         </p>
       </div>
