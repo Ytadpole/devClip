@@ -528,6 +528,13 @@ fn show_palette(app: &tauri::AppHandle) {
         let _ = w.center();
         let _ = w.show();
         let _ = w.set_focus();
+        // WM 的防焦点抢占可能吞掉第一次 set_focus（实测：焦点没拿到
+        // 就永远不会触发失焦收起），延迟补一次。幂等，重复聚焦无害
+        let w2 = w.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let _ = w2.set_focus();
+        });
     }
 }
 
