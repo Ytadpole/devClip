@@ -80,7 +80,9 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-canvas);
+  /* 窗口本身 transparent:true：方形底色会把圆角面板的弧盖成方块，
+     底色语义由 data-panel-root 的面板自己承担 */
+  background: transparent;
   /* 桌面应用感：禁止整页滚动/选中 */
   overflow: hidden;
   user-select: none;

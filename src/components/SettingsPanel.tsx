@@ -51,7 +51,8 @@ export function SettingsPanel() {
   return (
     <div
       data-settings=""
-      className="overflow-hidden rounded-xl border border-line bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+      data-panel-root
+      className="overflow-hidden rounded-xl bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
     >
       <div className="flex items-center border-b border-line px-4">
         <span className="h-14 flex-1 self-center text-[15px] text-fg-strong">设置</span>

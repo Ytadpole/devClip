@@ -125,7 +125,8 @@ export function Palette() {
             const i = s.items.findIndex((x) => String(x.id) === v);
             if (i >= 0) useStore.getState().select(i);
           }}
-          className="overflow-hidden rounded-xl border border-line bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+          data-panel-root
+          className="overflow-hidden rounded-xl bg-panel/80 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
           {/* 搜索框 */}
           <div className="flex items-center gap-3 border-b border-line px-4">

@@ -412,34 +412,55 @@ test.describe("主题", () => {
   };
 
   /**
-   * body 的实际底色。
+   * 面板根元素的实际底色。
    *
    * 断言属性名（data-theme）只能证明 JS 跑到了，证明不了 CSS 真的
    * 换过来了 —— 少写一条 `html[data-theme="light"]` 规则的话，
-   * 属性照样变，而界面还是黑的
+   * 属性照样变，而界面还是黑的。
+   *
+   * 早期读的是 body：窗口透明化之后 body 不再承载底色（它是
+   * transparent 的，方形底色会把圆角盖成方块），底色语义搬到了
+   * data-panel-root 上
    */
-  const canvas = (page: Page) =>
+  /**
+   * 面板根元素的明度（OKLab L，0~1）。
+   *
+   * 断言属性名（data-theme）只能证明 JS 跑到了，证明不了 CSS 真的
+   * 换过来了 —— 少写一条 `html[data-theme="light"]` 规则的话，
+   * 属性照样变，而界面还是黑的。
+   *
+   * 早期读的是 body 的 rgb 通道：窗口透明化后底色语义搬到
+   * data-panel-root，而 bg-panel/80 的计算值是 color-mix 的 oklab
+   * 记法（canvas 也会原样吐回 oklab，不归一化），于是直接取 L
+   * 分量 —— 「底色真的变白」本来就是明度断言
+   */
+  const panelLightness = (page: Page) =>
     page.evaluate(() => {
-      const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!;
-      return m.slice(0, 3).map(Number);
+      const el = document.querySelector("[data-panel-root]")!;
+      const bg = getComputedStyle(el).backgroundColor;
+      const ok = bg.match(/oklab\(\s*([\d.]+)(%?)/);
+      if (ok) return Number(ok[1]) * (ok[2] === "%" ? 0.01 : 1);
+      // 兜底：哪天序列化变回 rgb，取绿色通道当明度代理
+      const rgb = bg.match(/\d+(\.\d+)?/g) ?? ["0"];
+      return Number(rgb[1]) / 255;
     });
 
   test("默认深色，切到亮色后 html 带 data-theme=light 且底色真的变白", async ({ page }) => {
     // mock 的默认设置是 dark。这条也守着「没设 data-theme 时按深色算」：
     // 属性在设置读回来之前是缺的，那几毫秒里不能闪一下亮色
     await expect(html(page)).toHaveAttribute("data-theme", "dark");
-    expect(Math.max(...(await canvas(page)))).toBeLessThan(40);
+    expect(await panelLightness(page)).toBeLessThan(0.4);
 
     await pick(page, "亮色");
     await expect(html(page)).toHaveAttribute("data-theme", "light");
-    expect(Math.min(...(await canvas(page)))).toBeGreaterThan(200);
+    expect(await panelLightness(page)).toBeGreaterThan(0.8);
   });
 
   test("切回深色能还原，不会卡在亮色", async ({ page }) => {
     await pick(page, "亮色");
     await pick(page, "深色");
     await expect(html(page)).toHaveAttribute("data-theme", "dark");
-    expect(Math.max(...(await canvas(page)))).toBeLessThan(40);
+    expect(await panelLightness(page)).toBeLessThan(0.4);
   });
 
   test("设置页的开关标出当前主题", async ({ page }) => {
