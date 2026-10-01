@@ -37,6 +37,11 @@ tauri-plugin-global-shortcut = "2.4.0"
 tray-icon = "0.25.1"
 tauri-plugin-single-instance = "2.5.1"
 
+# 只在 Linux 上要：从 raw window handle 里取 X11 窗口 ID，
+# 好发 _NET_ACTIVE_WINDOW 客户消息把焦点抢回来（见 lib.rs request_focus）
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+
 # 只在 macOS 上要：读前台应用、拉起目标应用。
 # 走 NSWorkspace 进程内调用，不起 osascript —— 详见 clipboard.rs
 [target.'cfg(target_os = "macos")'.dependencies]

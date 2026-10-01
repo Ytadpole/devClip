@@ -802,6 +802,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "objc2-app-kit",
+ "raw-window-handle",
  "rusqlite",
  "serde",
  "serde_json",

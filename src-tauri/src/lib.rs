@@ -525,6 +525,66 @@ fn spawn_expiry_task(app: tauri::AppHandle) {
 /// 状态覆盖绝大多数场景；跨重启回到居中，要跨重启再加进 settings。
 static LAST_WIN_POS: std::sync::Mutex<Option<(i32, i32)>> = std::sync::Mutex::new(None);
 
+/// 让面板拿到键盘焦点。只对**当前可见**的面板有意义。
+///
+/// Linux 上要走两条路，`set_focus()` 单独一条不够。
+///
+/// `set_focus()` 走 GTK 的 present 路径，在 Muffin（Cinnamon 的 WM）
+/// 上会被防焦点抢占策略整个拒掉：`focus-new-windows` 是 `smart`，
+/// 而托盘应用从来没有用户输入事件，`_NET_WM_USER_TIME` 属性压根
+/// 不存在，请求一律不理。实测面板 `IsViewable` 而焦点纹丝不动，
+/// 连测 6 轮 6 次没拿到过。
+///
+/// **要命的不是「焦点拿得慢」，是永远拿不到。** 没有 FocusIn
+/// 就永远等不到 FocusOut，而 `WindowEvent::Focused(false)` 是
+/// 唯一的收起路径 —— 面板会变成一个打不了字、也关不掉的东西。
+///
+/// EWMH 的 `_NET_ACTIVE_WINDOW` 客户消息是 WM 认可的路子，
+/// 实测 source indication 填 1 或 2 都放行，用的是 paste 前唤醒
+/// 目标窗口那同一个函数。
+///
+/// ## 开头那个可见性判断不能省
+///
+/// `set_focus()` 在 GTK 里是 `gtk_window_present()`，而 present
+/// 会**把隐藏的窗口重新映射出来**。抢焦点的轮询最长活 2s，用户
+/// 在这期间点走让面板收起，下一次重试就会把刚藏好的面板又掏出来，
+/// 而 Tauri 那边仍记着「已隐藏」—— 面板就此卡住：X 认为它可见、
+/// 快捷键认为它隐藏，两边对不上，点它没反应、快捷键也切不走。
+///
+/// 这不是假设，是本机实测到的状态。挡住它的就是这一行。
+///
+/// macOS / Windows 上 `set_focus()` 本来就好使，不发这条消息
+#[cfg(target_os = "linux")]
+fn request_focus(w: &tauri::WebviewWindow) {
+    if !matches!(w.is_visible(), Ok(true)) {
+        return;
+    }
+    let _ = w.set_focus();
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = w.window_handle() else {
+        return;
+    };
+    // wry 在 Linux 上给的是 Xlib。两个变体的字段类型不一样
+    // （Xlib 是 u64，Xcb 是 NonZero<u32>），X11 窗口号本身只有
+    // 32 位，超出范围说明拿到的不是 X11 句柄，直接放弃
+    let wide = match handle.as_raw() {
+        RawWindowHandle::Xlib(h) => h.window,
+        RawWindowHandle::Xcb(h) => h.window.get().into(),
+        _ => return,
+    };
+    let Ok(win) = u32::try_from(wide) else {
+        return;
+    };
+    // 失败就算了：面板刚 show 出来时还没进 VIEWABLE，这个函数会
+    // 提前返回错误，下面那轮轮询会再试
+    let _ = clipboard::linux::activate_window(win);
+}
+
+#[cfg(not(target_os = "linux"))]
+fn request_focus(w: &tauri::WebviewWindow) {
+    let _ = w.set_focus();
+}
+
 fn show_palette(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         // 用户拖过的位置优先；没拖过才居中。配置里的 center: true 对
@@ -539,21 +599,60 @@ fn show_palette(app: &tauri::AppHandle) {
             }
         }
         let _ = w.show();
-        let _ = w.set_focus();
-        // WM 的防焦点抢占会间歇性吞掉 set_focus（实测：焦点没拿到就
-        // 打不了字，也永远等不来失焦收起）。轮询确认制：每 100ms 查
-        // is_focused，没拿到就再要，最多 ~2s——不依赖事件运气
+        // 抢焦点这件事 WM 会间歇性吞掉。轮询确认制：每 100ms 查
+        // is_focused，没拿到就再要，最多 ~2s——不依赖事件运气。
+        // 每次重试都走 request_focus 而不是裸 set_focus：Linux 上
+        // 只有客户消息那条路管用
+        //
+        // **show 之后不要立刻发激活请求**，第一轮要等 100ms。
+        // 那时 WM 还没处理完映射，激活请求会让它认为这个客户端要
+        // 自己管这个窗口，于是按自己的规则重新摆放 —— 实测面板被
+        // 丢到 (1022,574)，大半个在屏幕外，center() 白写了。
+        // 等一拍再发，它就只做聚焦、不碰位置
         let w2 = w.clone();
         std::thread::spawn(move || {
             for _ in 0..20 {
                 std::thread::sleep(std::time::Duration::from_millis(100));
+                // 面板已经被收起就收手。request_focus 自己也会查，
+                // 但在这里就退出更早：留着这条线程继续重试毫无意义
+                if !matches!(w2.is_visible(), Ok(true)) {
+                    return;
+                }
                 if w2.is_focused().unwrap_or(false) {
                     return;
                 }
-                let _ = w2.set_focus();
+                request_focus(&w2);
             }
         });
     }
+}
+
+/// 失焦后推迟一拍再隐藏。
+///
+/// 直接 hide 会有一个很难查的竞态：全局快捷键是靠 X11 的被动 grab
+/// 实现的，grab 在**按下那一刻**激活，而 grab 属于另一个客户端，
+/// WM 会为此先发一次 FocusOut —— 实测它比快捷键处理函数早到十几
+/// 毫秒。于是 [toggle_palette] 执行时面板已经被这次 FocusOut 收起，
+/// 它以为当前是收起态，又把面板显示回来。表现就是「面板开着的时候
+/// 按快捷键，一点反应都没有」。
+///
+/// 真的失焦不会自己回来，150ms 后再确认一次就能把两者分开。
+/// 代价是收起比点击晚 150ms，手感上察觉不到。
+///
+/// hide 走 `run_on_main_thread`：GTK 不是线程安全的，而这里是
+/// 后台线程。实测从后台线程直接调 `hide()` 会在屏幕上留下一条
+/// 十几像素高的残影（面板主体确实消失了，但顶部搜索行那条没擦掉）
+fn hide_unless_refocused(window: tauri::Window) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if matches!(window.is_focused(), Ok(true)) {
+            return;
+        }
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = window.hide();
+        });
+    });
 }
 
 /// 快捷键的显隐切换。记下前台应用：用户多半是从别的应用按快捷键过来的，
@@ -841,7 +940,7 @@ pub fn run() {
             // no-op；托盘「设置…」在失焦之后仍会走到 show_palette，
             // 所以从托盘进设置不受影响
             if let tauri::WindowEvent::Focused(false) = event {
-                let _ = window.hide();
+                hide_unless_refocused(window.clone());
             }
         })
         .invoke_handler(tauri::generate_handler![
