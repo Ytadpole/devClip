@@ -474,6 +474,36 @@ test.describe("主题", () => {
   });
 });
 
+test.describe("主题 · 面板上的切换按钮", () => {
+  const html = (page: Page) => page.locator("html");
+  const toggle = (page: Page) => page.locator("[data-theme-toggle]");
+
+  test("点一下翻到亮色，再点翻回深色，底色跟着真的变", async ({ page }) => {
+    // 不进设置页，直接在面板上换 —— 这条守的就是「不用退进去也能换」
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+
+    await toggle(page).click();
+    await expect(html(page)).toHaveAttribute("data-theme", "light");
+
+    await toggle(page).click();
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+  });
+
+  test("按钮的 aria-label 说的是「点了会变成什么」", async ({ page }) => {
+    // 画的是当前外观还是目标外观，读错方向会让人多点一次
+    await expect(toggle(page)).toHaveAttribute("aria-label", "切换到亮色");
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-label", "切换到深色");
+  });
+
+  test("翻到亮色后设置页的三选一跟着标到亮色", async ({ page }) => {
+    // 两处入口共用同一份状态：面板上翻过，设置页不能还显示深色
+    await toggle(page).click();
+    await page.getByRole("button", { name: "设置" }).click();
+    await expect(page.locator("[data-theme-picker] button[aria-pressed=true]")).toHaveText("亮色");
+  });
+});
+
 test.describe("主题 · 跟随系统", () => {
   // 默认的 colorScheme 是 light。选「跟随系统」后应当变亮 ——
   // 这条守的是 system 不是恒等于 dark
