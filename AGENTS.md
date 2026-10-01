@@ -9,7 +9,7 @@
 
 前端不碰系统能力，所有调用收敛到两处：
 
-- `src/lib/api.ts` — 唯一契约，`ClipboardApi`（11 个方法）
+- `src/lib/api.ts` — 唯一契约，`ClipboardApi`（13 个方法）
 - `src/lib/backend.ts` — 唯一分叉点，`impls` 表 + `VITE_BACKEND`
 
 规则：
