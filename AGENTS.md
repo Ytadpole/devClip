@@ -79,6 +79,11 @@ Rust 侧：`cd src-tauri && cargo check` 比重开 `pnpm tauri dev` 快得多。
   （`settings.rs` / `clamp_settings` 都已放行 `dark|light|system`）。
   这次的活儿全在前端：解析 `system`、落成 `<html data-theme>`、设置页开关
 - **`src/lib/mock.ts` 是内存态** —— 刷新即重置。新功能要造数据就往这里加
+- **用户启动的是 `~/soft/DevClip_*.AppImage`，不是构建输出目录里那份**
+  —— 两者同名同版本号，只有 md5 不同，光看文件名分不出新旧。
+  现在 `~/soft/` 那个已改成指向 `target/release/bundle/appimage/`
+  的软链；**别再往 `~/soft/` 里 cp**，会把它换成实体文件、陷阱复发。
+  验证前先对一下 `md5sum`，或看 `/proc/<pid>/exe` 指向哪个包
 - **`docs/` 在版本库中** —— 6 份设计文档 + `DEVLOG.md` 都已入库。
   设计有变更时连同文档一起改，别让代码走在文档前面
 - 有 CI（`.github/workflows/ci.yml`），无 pre-commit hook。CI 跑三平台
