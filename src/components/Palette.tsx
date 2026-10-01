@@ -29,6 +29,12 @@ export function Palette() {
       ) {
         inputDrag.current = null;
         cleanup();
+        // 拖动由 WM 接管指针，这行是自绘兜底；超时还原避免异常路径
+        // 下光标卡死
+        document.documentElement.style.cursor = "grabbing";
+        setTimeout(() => {
+          document.documentElement.style.cursor = "";
+        }, 1000);
         startWindowDrag();
       }
     };

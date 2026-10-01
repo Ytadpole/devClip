@@ -540,12 +540,18 @@ fn show_palette(app: &tauri::AppHandle) {
         }
         let _ = w.show();
         let _ = w.set_focus();
-        // WM 的防焦点抢占可能吞掉第一次 set_focus（实测：焦点没拿到
-        // 就永远不会触发失焦收起），延迟补一次。幂等，重复聚焦无害
+        // WM 的防焦点抢占会间歇性吞掉 set_focus（实测：焦点没拿到就
+        // 打不了字，也永远等不来失焦收起）。轮询确认制：每 100ms 查
+        // is_focused，没拿到就再要，最多 ~2s——不依赖事件运气
         let w2 = w.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let _ = w2.set_focus();
+            for _ in 0..20 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if w2.is_focused().unwrap_or(false) {
+                    return;
+                }
+                let _ = w2.set_focus();
+            }
         });
     }
 }
