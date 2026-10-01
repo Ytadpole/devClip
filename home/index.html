@@ -159,18 +159,10 @@ p:last-child{margin-bottom:0}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.5px;font-family:var(--mono)}
 .stat span{font-size:12px;color:var(--mute)}
 
-/* ── 提交表 ── */
-.commits{border:1px solid var(--line2);border-radius:12px;overflow:hidden}
-.crow{display:grid;grid-template-columns:62px 84px 1fr;gap:12px;padding:10px 16px;
-  border-bottom:1px solid var(--line2);font-size:13.5px;align-items:baseline}
-.crow:last-child{border-bottom:none}
-.crow:hover{background:var(--hover)}
-.ch{font-family:var(--mono);font-size:12px;color:var(--mute)}
-.cd{font-family:var(--mono);font-size:12px;color:var(--mute)}
-.cm{font-family:var(--mono);font-size:12.5px;color:var(--dim);overflow-wrap:anywhere}
-
 /* ── 技术栈 ── */
-.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;
+/* 8 项排成 4+4 而不是 5+3：既能填满不留空格，
+   也放得下「React 19 + TypeScript 6」这种长条目不折行 */
+.stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;
   background:var(--line2);border:1px solid var(--line2);border-radius:12px;overflow:hidden}
 .sk{background:var(--bg);padding:15px 17px}
 .sk em{display:block;font-size:11.5px;color:var(--faint);font-style:normal;
@@ -190,8 +182,7 @@ footer a:hover{color:var(--fg)}
   .hero{padding:64px 0 52px}
   .tree{padding-left:24px}
   .node::before{left:-21px}
-  .crow{grid-template-columns:1fr;gap:3px}
-  /* 窄屏收紧间距，但四条都留着 —— 历程是主内容，不能藏 */
+  /* 窄屏收紧间距，但导航项都留着 —— 历程是主内容，不能藏 */
   nav{gap:16px}
   nav a{font-size:12.5px}
 }
@@ -220,7 +211,7 @@ footer a:hover{color:var(--fg)}
       <a href="#ability">能力</a>
       <a href="#road">历程</a>
       <a href="#stats">进度</a>
-      <a href="#commits">提交</a>
+      <a href="#stack">技术栈</a>
       <button class="theme-btn" id="theme" type="button" aria-label="切换明暗主题" title="切换明暗主题">
         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -239,7 +230,7 @@ footer a:hover{color:var(--fg)}
 <div class="wrap">
 
   <div class="hero">
-    <div class="kicker"><i class="dot"></i>阶段 3 / 11 · 开发中</div>
+    <div class="kicker"><i class="dot"></i>阶段 5 / 11 · 开发中</div>
     <h1>不只是存下来，<br>而是理解它</h1>
     <p class="lead">
       面向开发者的跨平台剪贴板。在剪贴板之上叠加一层<strong>开发者语义</strong>：
@@ -276,6 +267,8 @@ footer a:hover{color:var(--fg)}
           <li>JWT decode header / payload</li>
           <li>Base64 encode / decode</li>
           <li>SQL format / 提表名</li>
+          <li>URL 去 query 保留 fragment / 取域名</li>
+          <li>UUID 去横线 / 大小写归一</li>
         </ul>
       </div>
       <div class="card">
@@ -312,14 +305,14 @@ footer a:hover{color:var(--fg)}
       <div class="node done">
         <div class="node-top">
           <span class="st">2026-09-27</span>
-          <h3>阶段 1 · 调色板界面</h3>
+          <h3>阶段 1 · 面板界面</h3>
           <span class="badge b-done">已完成</span>
         </div>
         <p>
-          <b>做了</b> 完整调色板交互：虚拟列表、搜索防抖、类型筛选、收藏、
+          <b>做了</b> 完整面板交互：虚拟列表、搜索防抖、类型筛选、收藏、
           右键菜单、图片缩略图。
           <br><b>实现</b> 148 条数据只渲染 6 行，搜索输入不卡顿，
-          全流程 18 条自动化用例守护。
+          全流程 30 条端到端用例守护。
           <br><b>提升</b> 交互层全部跑通且零 Rust 依赖，后续换后端无需返工。
         </p>
       </div>
@@ -352,27 +345,30 @@ footer a:hover{color:var(--fg)}
         </p>
       </div>
 
-      <div class="node next">
+      <div class="node done">
         <div class="node-top">
-          <span class="st">进行中</span>
+          <span class="st">2026-09-29</span>
           <h3>阶段 4 · 持久化与搜索</h3>
-          <span class="badge b-next">下一个</span>
+          <span class="badge b-done">已完成</span>
         </div>
         <p>
-          <b>要做</b> SQLite 存储层，FTS5 全文索引与去重入库。
-          <br><b>实现</b> 万级历史记录的毫秒级检索，1000 条下响应 &lt; 50ms。
-          <br><b>提升</b> 从内存假数据变为真正的本地历史库。
+          <b>做了</b> SQLite 存储层，FTS5 trigram 全文索引，去重入库，
+          图片与敏感内容单独处理。
+          <br><b>实现</b> 万级历史记录的毫秒级检索，1000 条下响应 <strong>2.2ms</strong>。
+          <br><b>提升</b> 从内存假数据变为真正的本地历史库，数据落在
+          <code>~/.local/share</code>，WAL 模式常驻。
         </p>
       </div>
 
-      <div class="node todo">
+      <div class="node next">
         <div class="node-top">
-          <span class="st">分水岭</span>
+          <span class="st">进行中</span>
           <h3>阶段 5 · 监听 + 快捷键 + 粘贴</h3>
-          <span class="badge b-todo">真正可用</span>
+          <span class="badge b-next">分水岭</span>
         </div>
         <p>
-          <b>要做</b> 全局剪贴板监听、快捷键呼出、模拟按键粘贴。
+          <b>做了</b> X11 剪贴板监听（含源程序退出后接管 Selection）、
+          全局快捷键呼出、模拟按键粘贴、系统托盘常驻。
           <br><b>实现</b> 任意程序 ⌘C → 快捷键 → 搜索 → 方向键 → Enter 粘贴。
           <br><b>提升</b> 跨程序流转闭环，成为每天都在用的工具。
         </p>
@@ -437,33 +433,19 @@ footer a:hover{color:var(--fg)}
   <section id="stats">
     <h2>当前进度</h2>
     <div class="stats">
-      <div class="stat"><b style="color:var(--emerald)">4</b><span>已完成阶段</span></div>
+      <div class="stat"><b style="color:var(--emerald)">5</b><span>已完成阶段</span></div>
       <div class="stat"><b>11</b><span>规划阶段</span></div>
-      <div class="stat"><b>85</b><span>自动化测试</span></div>
+      <div class="stat"><b>249</b><span>自动化测试</span></div>
       <div class="stat"><b>100%</b><span>识别准确率</span></div>
       <div class="stat"><b>13</b><span>内容类型</span></div>
     </div>
   </section>
 
-  <!-- 提交记录、技术栈、页脚合成最后一屏：页面末尾的 section
-       无法靠锚点滚到顶部（浏览器已到底），分开会让导航最后一项
-       点下去像没反应。合成一屏后导航项全部落在可定位的位置。 -->
-  <section id="commits">
-    <h2>提交记录</h2>
-    <div class="commits">
-      <div class="crow"><span class="ch">4e0aee8</span><span class="cd">09-27</span><span class="cm">chore: 初始化 DevClip 工程</span></div>
-      <div class="crow"><span class="ch">8948819</span><span class="cd">09-27</span><span class="cm">docs: 新增 AGENTS.md 并重写 README</span></div>
-      <div class="crow"><span class="ch">af22454</span><span class="cd">09-27</span><span class="cm">docs: AGENTS.md 只留耐久内容</span></div>
-      <div class="crow"><span class="ch">0dc574c</span><span class="cd">09-27</span><span class="cm">docs: 改用 OpenCode 两级 AGENTS.md 机制</span></div>
-      <div class="crow"><span class="ch">39b2fa5</span><span class="cd">09-27</span><span class="cm">chore: 停止追踪 .vscode/</span></div>
-      <div class="crow"><span class="ch">534eeea</span><span class="cd">09-27</span><span class="cm">feat: 补完阶段 1 的虚拟列表、防抖与右键菜单</span></div>
-      <div class="crow"><span class="ch">fbc207c</span><span class="cd">09-27</span><span class="cm">fix: 选中态色条错位并溢出到下一行</span></div>
-      <div class="crow"><span class="ch">9141237</span><span class="cd">09-27</span><span class="cm">chore: 引入 Playwright 端到端验收</span></div>
-      <div class="crow"><span class="ch">cc64440</span><span class="cd">09-28</span><span class="cm">feat: 阶段 2 接线，前端打通 Tauri IPC</span></div>
-      <div class="crow"><span class="ch">397562a</span><span class="cd">09-28</span><span class="cm">feat: 阶段 3 detect.rs，13 条内容识别规则</span></div>
-    </div>
-
-    <h2 class="sub">技术栈</h2>
+  <!-- 技术栈与页脚合成最后一屏：页面末尾的 section 无法靠锚点
+       滚到顶部（浏览器已到底），分开会让导航最后一项点下去像
+       没反应。合成一屏后导航项全部落在可定位的位置。 -->
+  <section id="stack">
+    <h2>技术栈</h2>
     <div class="stack">
       <div class="sk"><em>UI</em><b>React 19 + TypeScript 6</b></div>
       <div class="sk"><em>构建</em><b>Vite 8</b></div>
