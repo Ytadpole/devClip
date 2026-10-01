@@ -332,10 +332,8 @@ export const mockApi: ClipboardApi = {
       );
     }
 
-    out.sort((a, b) => {
-      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
-      return b.lastCopiedAt - a.lastCopiedAt;
-    });
+    // 纯按最近复制时间排序 —— 收藏不再置顶，与 repo.rs 同一规则
+    out.sort((a, b) => b.lastCopiedAt - a.lastCopiedAt);
 
     return delay(q.limit ? out.slice(0, q.limit) : out);
   },

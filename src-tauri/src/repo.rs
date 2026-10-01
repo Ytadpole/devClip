@@ -229,8 +229,10 @@ pub fn list(conn: &Connection, q: &Query) -> Result<Vec<ClipboardItem>, DbError>
         args.push(Box::new(since));
     }
 
-    // 收藏优先，其余按最近复制排序 —— 与 mock 后端行为一致
-    sql.push_str(" ORDER BY c.favorite DESC, c.last_copied_at DESC");
+    // 纯按最近复制时间排序 —— 收藏不再置顶（真机反馈：置顶让列表
+    // 看起来不像时间序），收藏只靠星标与 favorite_only 筛选表达。
+    // 与 mock 后端行为一致
+    sql.push_str(" ORDER BY c.last_copied_at DESC");
     sql.push_str(&format!(
         " LIMIT ?{} OFFSET ?{}",
         args.len() + 1,
@@ -415,15 +417,17 @@ mod tests {
     }
 
     #[test]
-    fn list_orders_favorite_first() {
+    fn list_orders_purely_by_last_copied_time() {
         let c = open_in_memory().unwrap();
         let (a, _) = add(&c, "older");
         let (b, _) = add(&c, "newer");
         toggle_favorite(&c, a).unwrap();
         let got = list(&c, &Query::default()).unwrap();
         assert_eq!(got.len(), 2);
-        assert_eq!(got[0].id, a, "收藏项应排最前");
-        assert_eq!(got[1].id, b);
+        // 收藏不再置顶：较新的普通项排在前，收藏项按时间待在原位。
+        // 找收藏靠「仅收藏」筛选，不靠排序特权
+        assert_eq!(got[0].id, b, "较新的项应在前，即使另一条是收藏");
+        assert_eq!(got[1].id, a);
     }
 
     /// trigram 的全部意义：搜子串能命中
