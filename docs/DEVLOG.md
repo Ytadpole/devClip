@@ -1389,3 +1389,18 @@ px-4，留给投影），WM 按**窗口**矩形约束移动，可见的面板就
 窗口化列表的高度从 `max-h-[min(420px,50vh)]` 改为 flex-1 实测，
 windowing 逻辑本来就按测量高度算，自适应；playwright 视口注释
 同步更新。
+
+---
+
+## b2c57cc · 2026-10-01 · fix: 放行 start-dragging 权限，拖拽区才生效
+
+拖动第一次真机试拖纹丝不动。查 acl-manifests 才知道
+`core:window:default` 的权限清单里**没有** `allow-start-dragging`
+（只有一堆 getter 和 internal-toggle-maximize），拖拽区的
+start_dragging 调用被 ACL 静默拒绝——不报错、不上屏、什么都不
+发生，和 7778dd8 时代「UI 静默失效」是同一类坑，只是这次藏在
+权限系统里。
+
+只放行 `core:window:allow-start-dragging` 这一条：它能干的只有
+「发起一次窗口拖动」，hide 当年绕自定义命令防的整包窗口权限
+依然没有开放。
