@@ -230,7 +230,7 @@ footer a:hover{color:var(--fg)}
 <div class="wrap">
 
   <div class="hero">
-    <div class="kicker"><i class="dot"></i>阶段 5 / 11 · 开发中</div>
+    <div class="kicker"><i class="dot"></i>阶段 6 / 11 · 开发中</div>
     <h1>不只是存下来，<br>而是理解它</h1>
     <p class="lead">
       面向开发者的跨平台剪贴板。在剪贴板之上叠加一层<strong>开发者语义</strong>：
@@ -251,7 +251,7 @@ footer a:hover{color:var(--fg)}
     <div class="grid3">
       <div class="card">
         <h3>Clipboard</h3>
-        <span class="tag" style="background:color-mix(in srgb,var(--sky) 14%,transparent);color:var(--sky)">阶段 1–5</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--sky) 14%,transparent);color:var(--sky)">阶段 1–5 · 已完成</span>
         <ul>
           <li>History 历史记录</li>
           <li>Search FTS5 全文检索</li>
@@ -261,7 +261,7 @@ footer a:hover{color:var(--fg)}
       </div>
       <div class="card">
         <h3>Toolbox</h3>
-        <span class="tag" style="background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet)">阶段 6</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet)">阶段 6 · 进行中</span>
         <ul>
           <li>JSON format / minify / sort</li>
           <li>JWT decode header / payload</li>
@@ -360,11 +360,11 @@ footer a:hover{color:var(--fg)}
         </p>
       </div>
 
-      <div class="node next">
+      <div class="node done">
         <div class="node-top">
-          <span class="st">进行中</span>
+          <span class="st">2026-10-01</span>
           <h3>阶段 5 · 监听 + 快捷键 + 粘贴</h3>
-          <span class="badge b-next">分水岭</span>
+          <span class="badge b-done">已完成</span>
         </div>
         <p>
           <b>做了</b> X11 剪贴板监听（含源程序退出后接管 Selection）、
@@ -374,42 +374,51 @@ footer a:hover{color:var(--fg)}
         </p>
       </div>
 
-      <div class="node todo">
+      <div class="node next">
         <div class="node-top">
-          <span class="st">差异化</span>
+          <span class="st">2026-09-30</span>
           <h3>阶段 6 · 开发者工具箱</h3>
-          <span class="badge b-todo">待开始</span>
+          <span class="badge b-next">差最后一步</span>
         </div>
         <p>
-          <b>要做</b> 识别类型对应的可执行操作，动作注册表驱动。
-          <br><b>实现</b> JSON 格式化、JWT 解码、Base64 编解码、SQL 提取表名
-          等一步到位。
-          <br><b>提升</b> 从「看」升级为「改」，省去切终端的往返。
+          <b>做了</b> 动作注册表：每条动作声明适用类型，列表按注册顺序出，
+          前端拿到的就是可执行的那几条。
+          <br><b>实现</b> <strong>19 个动作</strong>覆盖 8 种内容 —— JSON 格式化 /
+          排序、JWT 解码、Base64 编解码、SQL 格式化与提取表名、URL 去 query
+          与取域名、UUID 大小写与去横线。81 条单测。
+          <br><b>还差</b> 「变换 → 写回剪贴板 → 粘贴」这条链的前两步通了，
+          第三步还没做：变完还得自己切窗口按⌘V。
         </p>
       </div>
 
-      <div class="node todo">
+      <div class="node done">
         <div class="node-top">
-          <span class="st">护城河</span>
+          <span class="st">2026-10-01</span>
           <h3>阶段 7 · 安全与体验</h3>
-          <span class="badge b-todo">待开始</span>
+          <span class="badge b-done">已完成</span>
         </div>
         <p>
-          <b>要做</b> 密钥识别、自动过期清理、系统托盘、设置页。
-          <br><b>实现</b> 敏感内容默认不入库、到期自动消失。
+          <b>做了</b> 敏感内容识别（私钥 / AWS / GitHub / Stripe / Slack
+          五类）、到期自动清理、系统托盘常驻、设置页。
+          <br><b>实现</b> 敏感项<strong>照常入库但打标记</strong>，搜索时默认不
+          返回、要点「含敏感」分组才看得到，60 秒后后台任务删除并
+          <strong>连系统剪贴板一起清空</strong>。只做格式固定、不会误报的规则
+          —— 把一段 SQL 判成密钥，用户会立刻关掉这个功能。
           <br><b>提升</b> 建立「放心用它管理剪贴板」的信任基础。
         </p>
       </div>
 
-      <div class="node todo">
+      <div class="node next">
         <div class="node-top">
-          <span class="st">平台</span>
+          <span class="st">进行中</span>
           <h3>阶段 8–10 · Linux / Windows / 发布</h3>
-          <span class="badge b-todo">待开始</span>
+          <span class="badge b-next">待真机</span>
         </div>
         <p>
-          <b>要做</b> Linux / Windows 原生适配与三端自动发布。
-          <br><b>实现</b> X11 与 Win32 的剪贴板监听，CI 矩阵产出安装包。
+          <b>做了</b> Linux(X11) 已真机跑通并产出 deb / rpm / AppImage；
+          CI 三平台矩阵编译与测试，推 tag 自动出三平台安装包。
+          <br><b>实现</b> X11 监听走 Selection 接管，Win32 与 macOS 目前
+          只有 CI 验证，没有真机跑过。
           <br><b>提升</b> 从自用工具变为可分发给任意开发者的产品。
         </p>
       </div>
@@ -433,10 +442,10 @@ footer a:hover{color:var(--fg)}
   <section id="stats">
     <h2>当前进度</h2>
     <div class="stats">
-      <div class="stat"><b style="color:var(--emerald)">5</b><span>已完成阶段</span></div>
+      <div class="stat"><b style="color:var(--emerald)">7</b><span>已完成阶段</span></div>
       <div class="stat"><b>11</b><span>规划阶段</span></div>
       <div class="stat"><b>249</b><span>自动化测试</span></div>
-      <div class="stat"><b>100%</b><span>识别准确率</span></div>
+      <div class="stat"><b>19</b><span>工具箱动作</span></div>
       <div class="stat"><b>13</b><span>内容类型</span></div>
     </div>
   </section>
