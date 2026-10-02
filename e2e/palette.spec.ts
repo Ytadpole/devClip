@@ -558,3 +558,32 @@ test("跑一轮主要交互后控制台干净", async ({ page }) => {
 
   expect(errors).toEqual([]);
 });
+
+test.describe("监听不可用", () => {
+  // beforeEach 已经 goto("/")，这里要换 URL 造降级场景 ——
+  // mock 的 monitorStatus 认 ?monitor=off
+  test("常驻显示原因，不随 2.6 秒状态栏消失", async ({ page }) => {
+    await page.goto("/?monitor=off");
+    const warn = page.locator("[data-monitor-issue]");
+    await expect(warn).toBeVisible();
+    await expect(warn).toHaveAttribute("data-status", "warn");
+    await expect(warn).toContainText("剪贴板监听未启用");
+    await expect(warn).toContainText("Wayland");
+
+    // 关键的一条：它不能被会消失的 status 顶掉，也不能自己消失。
+    // 等过 2.6 秒（status 的自动消失时长）之后仍然在
+    await page.waitForTimeout(3000);
+    await expect(warn).toBeVisible();
+  });
+
+  test("占掉整行，不与快捷键提示并存", async ({ page }) => {
+    await page.goto("/?monitor=off");
+    await expect(page.locator("[data-monitor-issue]")).toBeVisible();
+    // 监听没起来时快捷键提示没有意义（那正是坏掉的部分）
+    await expect(page.getByText("↵ 粘贴")).toHaveCount(0);
+  });
+
+  test("默认不显示", async ({ page }) => {
+    await expect(page.locator("[data-monitor-issue]")).toHaveCount(0);
+  });
+});
