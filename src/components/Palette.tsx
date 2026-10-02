@@ -295,7 +295,7 @@ export function Palette() {
                   {a.label}
                 </button>
               ))}
-              <span className="ml-auto text-[11px] text-faint">结果写入剪贴板</span>
+              <span className="ml-auto text-[11px] text-faint">变换后直接粘贴</span>
             </div>
           )}
 

@@ -399,14 +399,14 @@ export const mockApi: ClipboardApi = {
     const item = db.find((x) => x.id === id);
     if (!item) return delay({ ok: false, error: `mock 后端：第 ${id} 条不存在` });
     try {
-      // 与 Rust 侧同约定：结果「写回剪贴板」，返回的是一句摘要。
-      // 摘要的措辞也照着 Rust 那边的形状写（label + 体积 + 去向），
-      // 这样同一句断言在两个后端下都成立
+      // 与 Rust 侧同约定：结果写回剪贴板**并直接粘到原窗口**，返回的是
+      // 一句摘要。摘要的措辞照着 Rust 那边的形状写（label + 体积 +
+      // 去向），这样同一句断言在两个后端下都成立
       const value = run(item.content);
       const label = ACTIONS[item.contentType].find((a) => a.id === actionId)?.label ?? actionId;
       return delay({
         ok: true,
-        value: `mock：${label} ${value.length} 字符，已复制到剪贴板（mock 不真的写）`,
+        value: `mock：${label} ${value.length} 字符，已粘贴（mock 不真的粘贴）`,
       });
     } catch (e) {
       return delay({ ok: false, error: `mock：${e instanceof Error ? e.message : String(e)}` });

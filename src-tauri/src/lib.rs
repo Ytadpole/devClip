@@ -295,16 +295,34 @@ async fn paste(
     clipboard::write_text(&content)?;
     sw.mark(&content);
 
+    let back = unpoison(&target.0).take();
+    paste_into_restore_target(&app, back).await.map(|_| ())
+}
+
+/// 收面板 → 激活原目标窗口 → 发粘贴键。`paste` 与
+/// `run_toolbox_action` 走的是同一条路，抽出来是为了让顺序只有一处
+///
+/// `back` 是弹出面板前的前台窗口，由调用方先 `take()` 出来 ——
+/// 这个函数要跨 await，不能持有 `State` 的借用
+///
+/// 顺序不能换：先收起自己的窗口把焦点让出去，目标应用到前台之后
+/// 再等它稳定，最后才发按键。少任何一步，按键都会落到 DevClip 身上
+///
+/// 返回值：`Ok(true)` = 键发出去了；`Ok(false)` = 降级（已发提示，
+/// 用户手动按一下即可）；`Err` = 连目标窗口都激活不了，面板已弹回
+async fn paste_into_restore_target(
+    app: &tauri::AppHandle,
+    back: Option<String>,
+) -> Result<bool, String> {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
 
-    let back = unpoison(&target.0).take();
     if let Some(bundle) = back {
         if let Err(e) = clipboard::activate(&bundle) {
             // 窗口已经藏起来了，不还原的话用户只会看到面板凭空消失，
             // 报错文案根本没人看得见
-            show_palette(&app);
+            show_palette(app);
             return Err(e);
         }
         // 目标应用激活是异步的，图标弹回动画期间发键会被丢掉
@@ -314,15 +332,15 @@ async fn paste(
     // 内容已经写进剪贴板了，所以至少还能让用户手动按一下 ——
     // 一个「偶尔要手动按 ^V」的版本，远好过一个「粘贴按钮点不动」的版本
     match clipboard::send_paste_keystroke() {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(true),
         Err(e) => {
             // 窗口已经藏了、目标也激活了，不弹回来就没有任何提示，
             // 用户只会看到「点了没反应」
-            show_palette(&app);
+            show_palette(app);
             // emit 而不是直接改 store：命令层拿不到 store，
             // 而前端已经在监听这个事件（api.ts 的 subscribe 同一条通道）
             let _ = tauri::Emitter::emit(
-                &app,
+                app,
                 "clipboard://notice",
                 serde_json::json!({
                     "text": format!(
@@ -332,7 +350,7 @@ async fn paste(
                     "reason": e,
                 }),
             );
-            Ok(())
+            Ok(false)
         }
     }
 }
@@ -345,57 +363,70 @@ fn available_actions(content_type: String) -> Vec<ToolboxAction> {
     toolbox::for_type(t)
 }
 
-/// 跑一个工具箱动作。返回的是**一句摘要**，不是结果本身。
+/// 跑一个工具箱动作，然后**直接粘到弹出面板前的前台窗口**。
+/// 返回的是**一句摘要**，不是结果本身
 ///
 /// 结果已经写进系统剪贴板了：工具箱的用处就是「变换完直接粘」，
 /// 而面板状态栏只有一行、2.6 秒后自动消失 —— 塞不下格式化后的 JSON。
 /// 写剪贴板前必须在 `SelfWrite` 记一笔，否则监听线程会把这个
 /// 结果当成用户在别处复制的内容，又存一条
+///
+/// 必须是 async：粘的那几步有等待与外部进程调用，同步命令会跑在
+/// 主线程上冻住事件循环（同 `paste`）。所以入参只有 `AppHandle` ——
+/// async 命令带 `State<'_, T>` 引用入参编译不过（future 必须
+/// `'static`），要拿状态就在 await 之前用 `app.state::<T>()`
 #[tauri::command]
-fn run_toolbox_action(
-    db: State<'_, Db>,
-    sw: State<'_, Arc<SelfWrite>>,
-    id: i64,
-    action_id: String,
-) -> ActionResult {
+async fn run_toolbox_action(app: tauri::AppHandle, id: i64, action_id: String) -> ActionResult {
     let entry = match toolbox::find(&action_id) {
         Some(e) => e,
         None => return ActionResult::err(format!("没有这个动作：{action_id}")),
     };
-    let item = {
-        let conn = unpoison(&db.conn);
-        match repo::get(&conn, id) {
+    // 这段是同步的，全部状态都在 await 之前取完
+    let (done, back) = {
+        let db = app.state::<Db>();
+        let sw = app.state::<Arc<SelfWrite>>();
+
+        let item = match repo::get(&unpoison(&db.conn), id) {
             Ok(Some(it)) => it,
             Ok(None) => return ActionResult::err(format!("第 {id} 条已不在历史里")),
             Err(e) => return ActionResult::err(format!("读取失败：{e}")),
+        };
+        // 动作是按 id 找到的，但还得确认它对**这一条**适用。
+        // UI 只会给出适用的动作，所以这条防线平时不触发；它是给
+        // 「invoke 传了别的类型的动作」兜底的 —— 否则一句普通文本
+        // 会被当 JSON 解析，报一个跟用户操作对不上的错
+        let t: detect::ContentType = item
+            .content_type
+            .parse()
+            .unwrap_or(detect::ContentType::Text);
+        if !entry.applies_to.contains(&t) {
+            return ActionResult::err(format!("「{}」不能用在 {} 上", entry.label, t.as_str()));
         }
+        let value = match (entry.run)(&item.content) {
+            Ok(v) => v,
+            Err(e) => return ActionResult::err(e),
+        };
+        sw.mark(&value);
+        if let Err(e) = clipboard::write_text(&value) {
+            return ActionResult::err(format!("动作成功但写不回剪贴板：{e}"));
+        }
+        let done = format!(
+            "{}：{} → {}",
+            entry.label,
+            human(item.content.len()),
+            human(value.len())
+        );
+        let target = app.state::<RestoreTarget>();
+        let back = unpoison(&target.0).take();
+        (done, back)
     };
-    // 动作是按 id 找到的，但还得确认它对**这一条**适用。
-    // UI 只会给出适用的动作，所以这条防线平时不触发；它是给
-    // 「invoke 传了别的类型的动作」兜底的 —— 否则一句普通文本
-    // 会被当 JSON 解析，报一个跟用户操作对不上的错
-    let t: detect::ContentType = item
-        .content_type
-        .parse()
-        .unwrap_or(detect::ContentType::Text);
-    if !entry.applies_to.contains(&t) {
-        return ActionResult::err(format!("「{}」不能用在 {} 上", entry.label, t.as_str()));
-    }
-    match (entry.run)(&item.content) {
-        Ok(value) => {
-            sw.mark(&value);
-            if let Err(e) = clipboard::write_text(&value) {
-                return ActionResult::err(format!("动作成功但写不回剪贴板：{e}"));
-            }
-            let n = item.content.len();
-            ActionResult::ok(format!(
-                "{}：{} → {}，已复制到剪贴板",
-                entry.label,
-                human(n),
-                human(value.len())
-            ))
-        }
-        Err(e) => ActionResult::err(e),
+
+    // 降级时（键没发出去）不说「已粘贴」—— notice 已经告诉用户手动
+    // 按哪一下了，摘要再报一次「已粘贴」会与事实矛盾
+    match paste_into_restore_target(&app, back).await {
+        Ok(true) => ActionResult::ok(format!("{done}，已粘贴")),
+        Ok(false) => ActionResult::ok(format!("{done}，已复制到剪贴板")),
+        Err(e) => ActionResult::err(format!("{done}，但没能粘贴：{e}")),
     }
 }
 
