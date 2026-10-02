@@ -24,6 +24,7 @@ export function ContextMenu() {
   const paste = useStore((s) => s.paste);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const remove = useStore((s) => s.remove);
+  const beginEdit = useStore((s) => s.beginEdit);
 
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -60,6 +61,10 @@ export function ContextMenu() {
   const entries: Entry[] = [
     { kind: "item", label: "粘贴", hint: "↵", run: () => void paste(it.id) },
     { kind: "item", label: "复制", hint: "⌘C", run: () => void copy(it.id) },
+    // 图片条目没有可编辑的文本（content 是占位），入口就不给
+    ...(it.contentType === "image"
+      ? []
+      : [{ kind: "item", label: "编辑", hint: "⌘E", run: () => beginEdit(it) } satisfies Entry]),
     {
       kind: "item",
       label: it.favorite ? "取消收藏" : "收藏",

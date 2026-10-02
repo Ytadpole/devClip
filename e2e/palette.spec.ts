@@ -198,12 +198,13 @@ test.describe("选中项必须始终留在 DOM 里", () => {
 });
 
 test.describe("右键菜单", () => {
-  test("打开后有四项", async ({ page }) => {
+  test("文本行打开后有五项（含编辑）", async ({ page }) => {
     await page.locator("[cmdk-item]").first().click({ button: "right" });
     await expect(page.locator('[role="menu"]')).toBeVisible();
     await expect(page.locator('[role="menu"] button')).toHaveText([
       /粘贴/,
       /复制/,
+      /编辑/,
       /收藏/,
       /删除/,
     ]);
@@ -226,6 +227,65 @@ test.describe("右键菜单", () => {
     await expect(page.locator('[role="menu"]')).toBeVisible();
     await page.mouse.click(20, 20);
     await expect(page.locator('[role="menu"]')).toHaveCount(0);
+  });
+});
+
+test.describe("编辑条目", () => {
+  /** 打开选中行的编辑器。走右键菜单而不是快捷键，
+      让入口少一层浏览器快捷键的不确定性 */
+  const openEditor = async (page: Page, needle: string) => {
+    await page.locator("[cmdk-input]").fill(needle);
+    await expect(page.locator("[cmdk-item]").first()).toBeVisible();
+    await page.locator("[cmdk-item]").first().click({ button: "right" });
+    await page.locator('[role="menu"] button', { hasText: "编辑" }).click();
+    await expect(page.locator("[data-editor] textarea")).toBeVisible();
+  };
+
+  test("⌘E 打开选中项的编辑器", async ({ page }) => {
+    // 搜到唯一一行再按 ⌘E，编辑框里的原文可以精确断言。
+    // 行的 textContent 以类型徽标开头，拿它反推内容不可靠
+    await page.locator("[cmdk-input]").fill("select * from users where id = 1");
+    await expect(page.locator("[cmdk-item]")).toHaveCount(1);
+    await page.locator("[cmdk-input]").press("ControlOrMeta+e");
+    await expect(page.locator("[data-editor]")).toBeVisible();
+    await expect(page.locator("[data-editor] textarea")).toHaveValue(
+      "select * from users where id = 1",
+    );
+  });
+
+  test("保存后新内容出现在列表里（清掉旧搜索词再找它）", async ({ page }) => {
+    await openEditor(page, "docker ps -a");
+    await page.locator("[data-editor] textarea").fill("docker ps --format json");
+    await page.locator("[data-editor-save]").click();
+    await expect(statusBar(page)).toHaveText(/已保存/);
+    await expect(page.locator("[data-editor]")).toHaveCount(0);
+    // 保存后列表仍带着旧查询「docker ps -a」，改过的行不再匹配 ——
+    // 这是筛选的正常行为。清掉再用新内容搜，同时验证新内容可检索
+    await page.locator("[cmdk-input]").fill("docker ps --format json");
+    await expect(page.locator("[cmdk-item]").first()).toContainText("docker ps --format json");
+  });
+
+  test("改成与另一条重复的内容要报错，且编辑器保持打开", async ({ page }) => {
+    // 第 2 条种子数据的内容，与 docker 那条不重复
+    await openEditor(page, "docker ps -a");
+    await page.locator("[data-editor] textarea").fill("select * from users where id = 1");
+    await page.locator("[data-editor-save]").click();
+    await expect(statusBar(page)).toHaveText(/已有相同内容/);
+    await expect(page.locator("[data-editor]")).toBeVisible();
+  });
+
+  test("空内容不能保存", async ({ page }) => {
+    await openEditor(page, "docker ps -a");
+    await page.locator("[data-editor] textarea").fill("   ");
+    await expect(page.locator("[data-editor-save]")).toBeDisabled();
+  });
+
+  test("Esc 取消不改动", async ({ page }) => {
+    await openEditor(page, "docker ps -a");
+    await page.locator("[data-editor] textarea").fill("改了一半又不想改了");
+    await page.locator("[data-editor] textarea").press("Escape");
+    await expect(page.locator("[data-editor]")).toHaveCount(0);
+    await expect(page.locator("[cmdk-item]").first()).toContainText("docker ps -a");
   });
 });
 
