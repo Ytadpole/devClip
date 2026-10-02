@@ -30,6 +30,18 @@
 `tsconfig.json` 开了 `noUnusedLocals` 和 `noUnusedParameters` —— 多一个没用到的
 import 就构建失败。
 
+### Windows 侧代码的本地验证
+
+`cargo check --target x86_64-pc-windows-msvc` 对整个 src-tauri **过不去**：
+rusqlite bundled 与 tauri 要给 windows 目标编 C，Linux 上没有对应编译器。
+能验的是 `clipboard/windows.rs` 这类纯 Rust 模块 —— 拷进一个只有
+`windows` 依赖的临时 crate（如 `/tmp/winprobe`），对它跑
+`cargo check` / `cargo clippy -- -D warnings`，加
+`--target x86_64-pc-windows-msvc`（需先 `rustup target add`，约 30MB）。
+纯 Rust 的 check 不链接，windows-rs 的 API 用法与 clippy 规则都能本地验；
+其余 glue（clipboard.rs / lib.rs 的 `#[cfg(windows)]` 分支）本地编不到，
+靠 CI 的 windows-latest 兜。不要把这个探针 crate 提交进仓库。
+
 ### e2e 测试
 
 `pnpm test` = Playwright 跑 `e2e/`。首次需要下载浏览器：
