@@ -17,6 +17,11 @@ use tauri::Manager;
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
 
+/// Windows 实现。与 macOS 同形（序号轮询，见 spawn_windows 的说明），
+/// 与 Linux 的 Selection 机制完全不同
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 use crate::repo;
 
 /// 轮询间隔。再密就是白烧 CPU，每次过一遍 NSPasteboard 不便宜
@@ -157,7 +162,7 @@ pub fn frontmost_app() -> Option<String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     return linux::frontmost_app();
     #[cfg(target_os = "windows")]
-    None
+    return windows::foreground_app_name();
 }
 
 /// 把某个 bundle id 拉到前台
@@ -203,7 +208,9 @@ pub fn activate(target: &str) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        Err(format!("当前平台尚未实现唤起目标应用（{target}）"))
+        // 传进来的是十六进制 HWND（0x…），frontmost_target 写的
+        let id = windows::parse_hwnd(target)?;
+        windows::activate_window(id)
     }
 }
 
@@ -269,7 +276,7 @@ pub fn send_paste_keystroke() -> Result<(), String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     return linux::send_paste_keystroke();
     #[cfg(target_os = "windows")]
-    Err("当前平台尚未实现模拟按键".into())
+    return windows::send_paste_keystroke();
 }
 
 /// 起监听线程。平台在这里分派。
@@ -280,12 +287,15 @@ pub fn spawn_watcher(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
     #[cfg(all(unix, not(target_os = "macos")))]
     return spawn_linux(app, self_write);
 
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    #[cfg(target_os = "windows")]
+    return spawn_windows(app, self_write);
+
+    #[cfg(not(any(all(unix, not(target_os = "macos")), target_os = "windows")))]
     spawn_macos(app, self_write)
 }
 
-/// macOS 的监听循环：`changeCount` 轮询
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+/// macOS 的监听循环：`changeCount` 语义下的内容比对轮询
+#[cfg(target_os = "macos")]
 fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
     std::thread::Builder::new()
         .name("devclip-clipboard".into())
@@ -329,9 +339,68 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
         .expect("起剪贴板监听线程失败");
 }
 
+/// Windows 的监听循环：轮询系统剪贴板序号。
+///
+/// **清单里写的是 WM_CLIPBOARDUPDATE，实现换成了序号轮询**，理由：
+///
+/// - Windows 有 macOS `changeCount` 的严格等价物
+///   `GetClipboardSequenceNumber`（windows.rs），且读它不需要打开
+///   剪贴板，轮询成本接近零
+/// - 消息钩子那条路要 RegisterClassW + message-only 窗口 + 消息循环
+///   + 窗口过程，两百多行 unsafe，而团队没有 Windows 真机，只有 CI
+///   的编译检查兜底 —— 盲写这么多无法运行的代码风险不成比例。
+///   轮询则把 macOS 这套**已被真机验证过**的循环原样搬过来，
+///   去抖、SelfWrite、MAX_BYTES、敏感打标的行为三平台完全一致
+/// - 人复制东西是秒级节奏，500ms 一次足够（macOS 侧同一个理由）
+///
+/// 与 macOS 的差异只有基准的建法：macOS 读一次内容记为已见过，
+/// 这里记下启动那一刻的序号 —— 语义相同（不追溯启动前的内容），
+/// 但序号比较连读剪贴板都省了
+#[cfg(target_os = "windows")]
+fn spawn_windows(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
+    std::thread::Builder::new()
+        .name("devclip-clipboard".into())
+        .spawn(move || {
+            let seen = Seen::default();
+            let mut last_seq = windows::sequence_number();
+            loop {
+                std::thread::sleep(POLL);
+                let seq = windows::sequence_number();
+                if seq == last_seq {
+                    continue;
+                }
+                last_seq = seq;
+
+                let Some(text) = read_text() else {
+                    // 剪贴板被清空或换成了图片/文件。丢掉去重基准，
+                    // 下次放回同样的文本仍会被当成新内容
+                    seen.clear();
+                    continue;
+                };
+                if seen.is_repeat(&text) {
+                    continue;
+                }
+                if self_write.take(&text) {
+                    continue;
+                }
+                if text.trim().is_empty() || text.len() > MAX_BYTES {
+                    continue;
+                }
+                // 敏感内容打标入库（与 macOS 同一设计，docs/03）：
+                // UI 打锁、默认搜不到、60 秒后由后台任务删除。
+                // Linux 路径的「直接拦下」是它的平台差异，不是设计本意
+                let sensitive = crate::sensitive::scan(&text).is_some();
+                if let Some(item) = capture(&app, &text, sensitive) {
+                    let _ = tauri::Emitter::emit(&app, "clipboard://changed", item);
+                }
+            }
+        })
+        .expect("起剪贴板监听线程失败");
+}
+
 /// 入库一条新内容。返回它，供前端增量刷新。
 ///
-/// `sensitive` 由调用方扫好传进来（两个平台的监听路径共用这里，
+/// `sensitive` 由调用方扫好传进来（三个平台的监听路径共用这里，
 /// 扫描点必须在入库之前）；到期时间与清理参数在这里按设置快照定
 fn capture(app: &tauri::AppHandle, text: &str, sensitive: bool) -> Option<repo::ClipboardItem> {
     // 取前台应用必须在锁外。系统调用一旦变慢（权限弹窗、进程起不来），
@@ -372,12 +441,13 @@ fn capture(app: &tauri::AppHandle, text: &str, sensitive: bool) -> Option<repo::
     repo::get(&conn, id).ok().flatten()
 }
 
-/// 手动粘贴该按哪个键。两个平台的约定不一样：macOS 是 ⌘V，
-/// Linux 桌面环境普遍是 Ctrl+Shift+V —— 单按 ^V 在 GNOME Terminal
-/// 里是「显示光标位置」而不是粘贴，Windows 上则会和很多软件的
-/// 快捷键打架
+/// 手动粘贴该按哪个键。三个平台的约定不一样：macOS 是 ⌘V，
+/// Windows 是 Ctrl+V，Linux 桌面环境普遍是 Ctrl+Shift+V —— 单按 ^V
+/// 在 GNOME Terminal 里是「显示光标位置」而不是粘贴
 pub const PASTE_KEY_HINT: &str = if cfg!(target_os = "macos") {
     "⌘V"
+} else if cfg!(target_os = "windows") {
+    "Ctrl+V"
 } else {
     "Ctrl+Shift+V"
 };

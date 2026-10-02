@@ -770,8 +770,8 @@ fn toggle_palette(app: &tauri::AppHandle) {
 
 /// 粘贴前记下前台窗口，粘贴后要回到那里。
 ///
-/// 存的是**窗口 ID**（X11）或 **bundle id**（macOS），不是显示用的
-/// 名字。名字会变、可能重复，靠它匹配回去经常落空
+/// 存的是**窗口 ID**（X11）、**bundle id**（macOS）或 **HWND**（Windows），
+/// 不是显示用的名字。名字会变、可能重复，靠它匹配回去经常落空
 pub fn frontmost_target() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
@@ -783,7 +783,7 @@ pub fn frontmost_target() -> Option<String> {
     }
     #[cfg(target_os = "windows")]
     {
-        None
+        clipboard::windows::frontmost_window().map(|h| format!("0x{h:x}"))
     }
 }
 
@@ -800,7 +800,18 @@ fn is_own_window(app: &tauri::AppHandle, target: &str) -> bool {
     let own: String = w.title().unwrap_or_default().to_string();
     // 窗口标题是判断依据之一，但平台各异；真正稳的是配置里的
     // identifier —— 两个都查，任一命中就算自己
-    own == target || target == app.config().identifier
+    if own == target || target == app.config().identifier {
+        return true;
+    }
+    // Windows 的 target 是前台 HWND 的十六进制（0x…），标题与
+    // identifier 都对不上，要拿自己主窗口的句柄比一遍才算数
+    #[cfg(target_os = "windows")]
+    if let Ok(h) = w.hwnd() {
+        if target == format!("0x{:x}", h.0 as usize) {
+            return true;
+        }
+    }
+    false
 }
 
 /// 「这台机器不能监听」的原因，没有就是正常
