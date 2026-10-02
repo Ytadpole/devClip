@@ -328,9 +328,16 @@ test.describe("工具箱动作条", () => {
   test("点动作会在状态栏给出摘要", async ({ page }) => {
     await onlyType(page, "json");
     await buttons(page).first().click();
-    // 返回的是摘要而不是结果本身 —— 结果进了剪贴板，
+    // 返回的是摘要而不是结果本身 —— 结果直接粘走了，
     // 而状态栏放不下格式化后的 JSON（见 api.ts 的注释）
-    await expect(statusBar(page)).toHaveText(/mock.*已复制到剪贴板/);
+    await expect(statusBar(page)).toHaveText(/mock.*已粘贴/);
+  });
+
+  test("工具条上写明动作会直接粘贴", async ({ page }) => {
+    // 这条提示是用户唯一的预期管理入口：点动作会收起面板、切走焦点，
+    // 不说清楚就会被当成 bug（docs/04 记着当初为什么先不做）
+    await onlyType(page, "json");
+    await expect(bar(page)).toContainText("变换后直接粘贴");
   });
 
   test("没有动作的类型不显示工具条", async ({ page }) => {
