@@ -230,7 +230,7 @@ footer a:hover{color:var(--fg)}
 <div class="wrap">
 
   <div class="hero">
-    <div class="kicker"><i class="dot"></i>阶段 6 / 11 · 开发中</div>
+    <div class="kicker"><i class="dot"></i>阶段 9 / 11 · 收尾中</div>
     <h1>不只是存下来，<br>而是理解它</h1>
     <p class="lead">
       面向开发者的跨平台剪贴板。在剪贴板之上叠加一层<strong>开发者语义</strong>：
@@ -255,20 +255,22 @@ footer a:hover{color:var(--fg)}
         <ul>
           <li>History 历史记录</li>
           <li>Search FTS5 全文检索</li>
-          <li>Favorite 收藏置顶</li>
+          <li>Favorite 收藏与筛选</li>
           <li>Tags 类型自动标注</li>
+          <li>Edit 编辑原条目</li>
         </ul>
       </div>
       <div class="card">
         <h3>Toolbox</h3>
-        <span class="tag" style="background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet)">阶段 6 · 进行中</span>
+        <span class="tag" style="background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet)">阶段 6 · 已完成</span>
         <ul>
-          <li>JSON format / minify / sort</li>
-          <li>JWT decode header / payload</li>
-          <li>Base64 encode / decode</li>
-          <li>SQL format / 提表名</li>
-          <li>URL 去 query 保留 fragment / 取域名</li>
+          <li>JSON 美化 / 压缩</li>
+          <li>JWT 解 Header / Payload / 过期检查</li>
+          <li>Base64 编解码（含 url-safe）</li>
+          <li>SQL 格式化 / 提表名 / 大小写归一</li>
+          <li>URL 去 query / 取域名 / 浏览器打开</li>
           <li>UUID 去横线 / 大小写归一</li>
+          <li>点动作即粘贴，一步到位</li>
         </ul>
       </div>
       <div class="card">
@@ -374,20 +376,20 @@ footer a:hover{color:var(--fg)}
         </p>
       </div>
 
-      <div class="node next">
+      <div class="node done">
         <div class="node-top">
-          <span class="st">2026-09-30</span>
+          <span class="st">2026-10-02</span>
           <h3>阶段 6 · 开发者工具箱</h3>
-          <span class="badge b-next">差最后一步</span>
+          <span class="badge b-done">已完成</span>
         </div>
         <p>
           <b>做了</b> 动作注册表：每条动作声明适用类型，列表按注册顺序出，
           前端拿到的就是可执行的那几条。
-          <br><b>实现</b> <strong>19 个动作</strong>覆盖 8 种内容 —— JSON 格式化 /
-          排序、JWT 解码、Base64 编解码、SQL 格式化与提取表名、URL 去 query
-          与取域名、UUID 大小写与去横线。81 条单测。
-          <br><b>还差</b> 「变换 → 写回剪贴板 → 粘贴」这条链的前两步通了，
-          第三步还没做：变完还得自己切窗口按⌘V。
+          <br><b>实现</b> <strong>19 个变换动作 + 「在浏览器打开」</strong>，
+          点动作一步到位：写回剪贴板 → 收面板 → 激活原窗口 → 发键。
+          另加条目编辑（⌘E 内置编辑器，类型识别与敏感扫描在后端重跑）。
+          <br><b>提升</b> 工具箱从「存着再看」变成「变完直接粘」，
+          JWT 解码带「base64 不是加密」的悬停提示。
         </p>
       </div>
 
@@ -408,21 +410,36 @@ footer a:hover{color:var(--fg)}
         </p>
       </div>
 
+      <div class="node done">
+        <div class="node-top">
+          <span class="st">2026-10-01</span>
+          <h3>阶段 8 · Linux(X11)</h3>
+          <span class="badge b-done">已完成</span>
+        </div>
+        <p>
+          <b>做了</b> X11 Selection 监听与接管（源程序退出后内容不丢）、
+          XTEST 模拟粘贴、托盘常驻，产出 deb / rpm / AppImage。
+          <br><b>实现</b> Mint 真机 <strong>5/5</strong>：捕获、去重、接管、
+          敏感拦截、粘贴全通，检测延迟约 0.5s。
+          <br><b>提升</b> 第二个平台真机可用，Wayland 会话明确降级并
+          引导切回 X11。
+        </p>
+      </div>
+
       <div class="node next">
         <div class="node-top">
           <span class="st">进行中</span>
-          <h3>阶段 8–10 · Linux / Windows / 发布</h3>
+          <h3>阶段 9–10 · Windows / 发布</h3>
           <span class="badge b-next">待真机</span>
         </div>
         <p>
-          <b>做了</b> Linux(X11) 已真机跑通并产出 deb / rpm / AppImage；
-          CI 三平台矩阵编译与测试；另有 release workflow，推 <code>v*</code>
-          tag 用 tauri-action 出三平台安装包挂 GitHub Releases
-          （<b>一次都还没跑过</b>，首次打 tag 才是它的首跑）。
-          <br><b>实现</b> X11 监听走 Selection 接管；macOS 与 Linux 的
-          监听都在真机上跑过，Windows 的监听还没写。
-          <br><b>还差</b> macOS 包未签名未公证（Gatekeeper 会拦，得右键
-          打开），Windows 侧没写。
+          <b>做了</b> Windows 监听（剪贴板序号轮询）、SendInput 模拟粘贴、
+          前台窗口激活与进程名采集，代码经 CI 三平台编译与本机
+          交叉检查兜底；release workflow 推 <code>v*</code> tag 用
+          tauri-action 出三平台安装包挂 GitHub Releases。
+          <br><b>实现</b> 三个平台的监听/粘贴代码全部就位。
+          <br><b>还差</b> Windows 真机验证；release 首跑；macOS 包
+          未签名未公证（Gatekeeper 会拦，得右键打开）。
           <br><b>提升</b> 从自用工具变为可分发给任意开发者的产品。
         </p>
       </div>
@@ -446,10 +463,10 @@ footer a:hover{color:var(--fg)}
   <section id="stats">
     <h2>当前进度</h2>
     <div class="stats">
-      <div class="stat"><b style="color:var(--emerald)">7</b><span>已完成阶段</span></div>
+      <div class="stat"><b style="color:var(--emerald)">9</b><span>已完成阶段</span></div>
       <div class="stat"><b>11</b><span>规划阶段</span></div>
-      <div class="stat"><b>252</b><span>自动化测试</span></div>
-      <div class="stat"><b>19</b><span>工具箱动作</span></div>
+      <div class="stat"><b>273</b><span>自动化测试</span></div>
+      <div class="stat"><b>20</b><span>工具箱动作</span></div>
       <div class="stat"><b>13</b><span>内容类型</span></div>
     </div>
   </section>
