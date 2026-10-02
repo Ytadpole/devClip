@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Command } from "cmdk";
 import { ContextMenu } from "./ContextMenu";
+import { ItemEditor } from "./ItemEditor";
 import { SettingsPanel } from "./SettingsPanel";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
@@ -87,6 +88,17 @@ export function Palette() {
         return;
       }
 
+      // 编辑器盖着列表时同理：Esc 取消回列表，其余按键都是
+      // textarea 的事（⌘↵ 保存由编辑器自己接）。⌘E 在这里
+      // 刻意不响应 —— 编辑器开着再按只会造成嵌套错觉
+      if (st.editing) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          st.closeEditor();
+        }
+        return;
+      }
+
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
@@ -133,6 +145,11 @@ export function Palette() {
       } else if (mod && k === "d") {
         e.preventDefault();
         void st.toggleFavorite(sel.id);
+      } else if (mod && k === "e") {
+        e.preventDefault();
+        // 图片条目没有可编辑的文本（content 是占位，真东西在文件里），
+        // 后端同样会拒 —— 两边一致，入口就直接不给
+        if (sel.contentType !== "image") st.beginEdit(sel);
       } else if (mod && e.key === "Backspace") {
         e.preventDefault();
         void st.remove(sel.id);
@@ -151,6 +168,8 @@ export function Palette() {
       <div className="h-full w-full">
         {s.view === "settings" ? (
           <SettingsPanel />
+        ) : s.editing ? (
+          <ItemEditor />
         ) : (
         <Command
           label="DevClip 剪贴板"
@@ -330,6 +349,7 @@ export function Palette() {
                 <span>↑↓ 选择</span>
                 <span>↵ 粘贴</span>
                 <span>⌘C 复制</span>
+                <span>⌘E 编辑</span>
                 <span>⌘D 收藏</span>
                 <span>右键 更多</span>
                 <span className="ml-auto flex items-center gap-2">

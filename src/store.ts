@@ -51,6 +51,12 @@ interface State {
   view: "list" | "settings";
   /** 设置页的草稿来源。打开设置页时拉一次 */
   settings: Settings | null;
+  /**
+   * 正在编辑的条目（docs/04 通用操作 Edit）。非 null 时编辑器
+   * 盖在列表上，Esc 取消、⌘↵ 保存。失败时编辑器保持打开 ——
+   * 关掉的话用户改的东西就没了
+   */
+  editing: ClipboardItem | null;
   selected: number;
   status: Status | null;
   menu: MenuTarget | null;
@@ -94,6 +100,9 @@ interface State {
   copy: (id: number) => Promise<void>;
   paste: (id: number) => Promise<void>;
   remove: (id: number) => Promise<void>;
+  beginEdit: (item: ClipboardItem) => void;
+  closeEditor: () => void;
+  saveEdit: (id: number, content: string) => Promise<boolean>;
   runAction: (item: ClipboardItem, action: ToolboxAction) => Promise<void>;
   say: (text: string, kind?: Status["kind"]) => void;
 
@@ -170,6 +179,7 @@ export const useStore = create<State>((set, get) => ({
   sensitive: false,
   view: "list",
   settings: null,
+  editing: null,
   selected: 0,
   status: null,
   menu: null,
@@ -362,6 +372,35 @@ export const useStore = create<State>((set, get) => ({
     if (!(await attempt("删除失败", () => api.remove([id])))) return;
     await get().refresh();
     get().say("已删除");
+  },
+
+  beginEdit(item) {
+    set({ editing: item });
+  },
+
+  closeEditor() {
+    set({ editing: null });
+  },
+
+  /**
+   * 保存编辑。返回是否成功，编辑器据此决定关不关 —— 失败必须
+   * 保持打开，关掉的话用户改的东西就找不回来了。
+   *
+   * 成功后走 refresh()：它会按 id 找回同一项，选中位置不跳。
+   * 类型识别在后端重跑了，改完的类型可能与当前筛选不符，
+   * 行从列表里消失是「筛掉了」而不是「丢了」
+   */
+  async saveEdit(id, content) {
+    try {
+      await api.updateItem(id, content);
+    } catch (e) {
+      get().say(errorText(e) || "保存修改失败", "err");
+      return false;
+    }
+    await get().refresh();
+    set({ editing: null });
+    get().say("已保存修改");
+    return true;
   },
 
   /**
