@@ -301,7 +301,13 @@ export function Palette() {
 
           {/* 底部：状态 / 快捷键提示。同为拖拽区 */}
           <div data-tauri-drag-region className="flex items-center gap-3 border-t border-line px-3 py-2 text-[11px] text-faint">
-            {s.status ? (
+            {s.monitorIssue ? (
+              // 监听没起来时占掉整行。它不会自己好，藏在会消失的
+              // status 里等于没说 —— 用户只会以为「复制了但历史里没有」
+              <span data-status="warn" data-monitor-issue="" className="text-amber-400 light:text-amber-700">
+                剪贴板监听未启用：{s.monitorIssue}
+              </span>
+            ) : s.status ? (
               <span
                 data-status={s.status.kind}
                 className={

@@ -122,6 +122,15 @@ export interface ClipboardApi {
   setHotkey(accel: string): Promise<string>;
 
   /**
+   * 剪贴板监听是否可用。`Some(原因)` = 没起来，原因可直接展示给用户
+   * （如 Wayland 会话没有剪贴板读取权限）。
+   *
+   * 单独问一次而不走事件：能不能监听在启动时就定了，而 webview 是
+   * 那之后才加载的，事件发出去没人接
+   */
+  monitorStatus(): Promise<string | null>;
+
+  /**
    * 订阅剪贴板变化。后端抓到新内容入库后会回调，调用方据此刷新列表。
    * 返回取消订阅的函数。
    *

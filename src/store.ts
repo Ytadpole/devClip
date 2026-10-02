@@ -60,6 +60,13 @@ interface State {
    * 没必要为此重开设置页
    */
   theme: Theme;
+  /**
+   * 剪贴板监听不可用的原因（Wayland 等），没有就是正常。
+   *
+   * **常驻**，不像 status 那样 2.6 秒就消失：它不会自己好，用户看不
+   * 到就只会以为「DevClip 坏了，复制了东西但历史里没有」
+   */
+  monitorIssue: string | null;
 
   init: () => Promise<void>;
   /** 变更之后重新拉取（收藏、粘贴、删除），尽量保住选中项 */
@@ -167,6 +174,7 @@ export const useStore = create<State>((set, get) => ({
   status: null,
   menu: null,
   theme: "dark",
+  monitorIssue: null,
 
   async init() {
     set({ loading: true });
@@ -185,6 +193,14 @@ export const useStore = create<State>((set, get) => ({
     // 主题不能等用户打开设置页才生效，那意味着每次呼出面板
     // 都要先进设置页一趟
     void get().loadTheme();
+    // 监听不可用（Wayland）是一条**常驻**状态，不是 2.6 秒的提示。
+    // Rust 侧必定提供这个命令，所以 reject 意味着有 bug（比如命令名写错），
+    // 那时提示就永远不显示了 —— 静默吞掉会让它变成查不到原因的问题，
+    // 所以留一行 warn（e2e 默认路径不走这里，不会污染控制台）
+    void api
+      .monitorStatus()
+      .then((why) => why && set({ monitorIssue: why }))
+      .catch((e) => console.warn("读取监听状态失败", e));
     try {
       await get().refresh();
     } finally {

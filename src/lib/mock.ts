@@ -429,6 +429,16 @@ export const mockApi: ClipboardApi = {
     return delay(accel);
   },
 
+  async monitorStatus() {
+    // 浏览器里当然没有「监听起不来」这回事，默认正常。
+    // `?monitor=off` 造降级场景给 e2e 用 —— 状态栏那条常驻提示
+    // 只有真的断过才知道它长什么样
+    const off = new URLSearchParams(location.search).get("monitor") === "off";
+    return delay(
+      off ? "Wayland 会话不支持自动监听（协议刻意不暴露剪贴板读取权限）" : null,
+    );
+  },
+
   subscribe() {
     // 没有真实剪贴板，也就没有事件可听。空函数即可 ——
     // 界面本来就该在没有新内容时保持原样

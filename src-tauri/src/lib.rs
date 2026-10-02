@@ -712,19 +712,19 @@ fn is_own_window(app: &tauri::AppHandle, target: &str) -> bool {
     own == target || target == app.config().identifier
 }
 
-/// 告诉前端「这台机器不能监听」，界面据此显示原因而不是
-/// 假装在正常工作
+/// 「这台机器不能监听」的原因，没有就是正常
 ///
-/// 唯一调用点在 Linux 的监听路径里（X11 需要常驻持有者），所以
-/// 跟着同一个 cfg 走 —— 否则 macOS / Windows 上它就是死代码，
-/// 而 CI 的 clippy 带 `-D warnings`
-#[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) fn emit_monitor_unavailable(app: &tauri::AppHandle, reason: String) {
-    let _ = tauri::Emitter::emit(
-        app,
-        "clipboard://unavailable",
-        serde_json::json!({ "reason": reason }),
-    );
+/// 原来是发 `clipboard://unavailable` 事件，前端也确实没有监听方 ——
+/// 但那不是漏写监听的问题，而是**这个事件永远送不到**：状态在
+/// `setup()` 里就定了，而 webview 是那之后才加载的。所以改成可查询的
+/// 状态，前端 `init()` 时问一次。
+#[derive(Default)]
+pub struct MonitorIssue(pub std::sync::Mutex<Option<String>>);
+
+/// 前端问「监听起来了吗」。`Some(原因)` = 没起来，原因可直接展示
+#[tauri::command]
+fn monitor_status(issue: State<'_, MonitorIssue>) -> Option<String> {
+    unpoison(&issue.0).clone()
 }
 
 /// 设置文件位置，与数据库同目录
@@ -913,6 +913,9 @@ pub fn run() {
 
             let sw = Arc::new(SelfWrite::default());
             app.manage(sw.clone());
+            // 必须在 spawn_watcher 之前 manage：监听起不来时它要往里写
+            // 原因，而 try_state 对未 manage 的类型会失败
+            app.manage(MonitorIssue::default());
             clipboard::spawn_watcher(app.handle().clone(), sw);
 
             spawn_expiry_task(app.handle().clone());
@@ -958,6 +961,7 @@ pub fn run() {
             run_toolbox_action,
             get_settings,
             set_settings,
+            monitor_status,
             set_hotkey,
             get_hotkey,
         ])

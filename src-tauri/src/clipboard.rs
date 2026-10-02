@@ -392,9 +392,13 @@ pub const PASTE_KEY_HINT: &str = if cfg!(target_os = "macos") {
 #[cfg(all(unix, not(target_os = "macos")))]
 fn spawn_linux(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
     if let Some(why) = linux::monitor_blocker() {
-        // 明确告诉用户为什么，不能静默不工作
+        // 明确告诉用户为什么，不能静默不工作。存进 managed state
+        // 供 `monitor_status` 查询 —— 事件在这个时点发不出去，
+        // webview 还没加载
         eprintln!("剪贴板监听未启用：{why}");
-        crate::emit_monitor_unavailable(&app, why);
+        if let Some(issue) = app.try_state::<crate::MonitorIssue>() {
+            *issue.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(why);
+        }
         return;
     }
 
