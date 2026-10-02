@@ -1385,13 +1385,24 @@ invoke 仍走 backend.ts 分派——组件不直接 invoke 的老规矩不破�
 
 ## 113ae23 · 2026-10-01 · docs: 补记面板拖动 DEVLOG
 
-纯补录 1eff8b0 追加的搜索框拖动一段，本身没有代码改动，不再展开。
+纯补录 1eff8b0 追加的搜索框拖动一段。
+
+⚠️ **标题与内容不符**：这个提交除文档外还带着 `Palette.tsx` 的
+布局改动（面板满铺窗口、去掉 pt-11vh 留白）。那部分是 rebase 掉
+的 `1280c18` 被并进来的，正文见上面「孤儿条目 · 面板满铺窗口」。
+`git show --stat 113ae23` 能看到两处文件。
 
 ---
 
 ## 6cae691 · 2026-10-01 · docs: 补记拖动 DEVLOG 两则
 
-纯补录 1eff8b0 与 5e858a4 两条的记录，本身没有代码改动，不再展开。
+纯补录 1eff8b0 与 5e858a4 两条的记录。
+
+⚠️ **同样标题与内容不符**：还带着
+`src-tauri/capabilities/default.json` 的改动（放行
+`core:window:allow-start-dragging`）。那是 rebase 掉的 `b2c57cc`
+被并进来的，正文见上面「孤儿条目 · 放行 start-dragging 权限」。
+`git show --stat 6cae691` 能看到两处文件。
 
 ---
 
@@ -1402,12 +1413,16 @@ invoke 仍走 backend.ts 分派——组件不直接 invoke 的老规矩不破�
 
 ---
 
-## 1280c18 · 2026-10-01 · feat: 面板满铺窗口，拖动范围与可见边界一致
+### 孤儿条目 · 面板满铺窗口（原 hash 1280c18）
 
-⚠️ **这个 hash 不在 git 历史里** —— 它是 rebase 掉的孤儿提交（对象还在，
-`git reflog` 查得到，父提交 bdfc0f0 在链上）。代码改动在库里，但已不在
-任何分支上，所以本文件的「一条提交对一条」在这两条上不成立。内容照
-原样保留，处置方式待定。
+**这段没有 hash 是故意的。** 它原本是 `1280c18`（2026-10-01，
+`feat: 面板满铺窗口，拖动范围与可见边界一致`），但那次 rebase 把它
+丢出了历史：对象还在（`git reflog` 查得到，父提交 `bdfc0f0` 在链
+上），却不在任何分支上。它的代码改动被并进了 **`113ae23`** ——
+而那个提交的标题是 `docs: 补记面板拖动 DEVLOG`，看标题会以为它
+只动文档。
+
+正文照原样保留，因为这些取舍（尤其是那些**代价**）只有这里记着：
 
 首轮真机试拖暴露两个问题，二次修整：
 
@@ -1426,13 +1441,14 @@ px-4，留给投影），WM 按**窗口**矩形约束移动，可见的面板就
 windowing 逻辑本来就按测量高度算，自适应；playwright 视口注释
 同步更新。
 
----
+### 孤儿条目 · 放行 start-dragging 权限（原 hash b2c57cc）
 
-## b2c57cc · 2026-10-01 · fix: 放行 start-dragging 权限，拖拽区才生效
-
-⚠️ 同上：孤儿提交，hash 不在 git 历史里（`capabilities/default.json`
-里的 `core:window:allow-start-dragging` 与 `Palette.tsx` 的
-`data-tauri-drag-region` 都还在库里）。
+同上一条的情况：原提交 `b2c57cc`
+（`fix: 放行 start-dragging 权限，拖拽区才生效`）被 rebase 丢出
+历史，代码改动被并进了 **`6cae691`**（标题
+`docs: 补记拖动 DEVLOG 两则`）。`capabilities/default.json` 里的
+`core:window:allow-start-dragging` 与 `Palette.tsx` 的
+`data-tauri-drag-region` 都还在库里。
 
 拖动第一次真机试拖纹丝不动。查 acl-manifests 才知道
 `core:window:default` 的权限清单里**没有** `allow-start-dragging`
@@ -1999,3 +2015,39 @@ README 自己与刚改对的 docs/06 打架。改动与原因都并进 c795339 �
 `clipboard://unavailable` 那一行 —— 它不是「前端漏了监听」，而是
 永远送不到，留着会让下一个人再犯同样的错。lib.rs 的 command 数
 16 → 17。
+
+---
+
+## cec7f31 · 2026-10-02 · docs: 收尾，DEVLOG 与 git log 只差最后一条
+
+纯补录，本身没有代码改动。
+
+**顺带记下一个结构性事实**：条目只能由**更晚**的提交写，所以只要
+最后一个提交是 DEVLOG 提交，「只差最后一行」就永远补不齐 —— 补一条
+就多一条要补。历史上靠 `56906f5` 那种批量补解决过。
+
+---
+
+## bc24271 · 2026-10-02 · docs: 补记 0c49f96，收尾
+
+纯补录，本身没有代码改动，不再展开。
+
+---
+
+## fa070f5 · 2026-10-02 · docs: 补记 7187322
+
+纯补录 Wayland 监听提示那一条的正文（发事件送不到、常驻而非
+2.6 秒提示、`try_state` 而非 `state`），本身没有代码改动。
+
+---
+
+## ff2f40a · 2026-10-02 · docs: 补记 e2e 三条
+
+纯补录 0aaff6c 一条的记录（等过 3 秒再断言、改坏后两条会红），
+本身没有代码改动，不再展开。
+
+---
+
+## ecca157 · 2026-10-02 · docs: 补记 814302b
+
+纯补录契约方法数与事件表那一条，本身没有代码改动，不再展开。
