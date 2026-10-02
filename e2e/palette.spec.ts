@@ -313,8 +313,35 @@ test.describe("工具箱动作条", () => {
 
     // 用 url 而不是 uuid：筛选栏只有 QUICK_TYPES 那几个，
     // uuid 的 chip 不在（它的动作由 Rust 侧单元测试守着）
+    //
+    // url 多一条「在浏览器打开」：它 kind=open，不进注册表，
+    // 由 available_actions 单独补进去
     await onlyType(page, "url");
-    await expect(buttons(page)).toHaveText([/去掉 query/, /提取域名/]);
+    await expect(buttons(page)).toHaveText([
+      /去掉 query/,
+      /提取域名/,
+      /在浏览器打开/,
+    ]);
+  });
+
+  test("open 类动作走 openExternal，不进变换那条路", async ({ page }) => {
+    await onlyType(page, "url");
+    await buttons(page).last().click();
+    // 精确匹配而不是「含 A 且不含 B」两条断言：状态栏 2.6 秒后整个
+    // 消失，第二条 `not.toHaveText` 会以「元素不存在」失败 —— 那不是
+    // 它想说的意思。精确文本本身就证明了不是「已粘贴」那句
+    await expect(statusBar(page)).toHaveText("已交给系统默认程序打开");
+  });
+
+  test("工具条提示语区分变换与打开", async ({ page }) => {
+    // 有 open 类动作时那句「变换后直接粘贴」会误导 ——
+    // 点「在浏览器打开」根本不经过剪贴板
+    await onlyType(page, "url");
+    await expect(bar(page)).toContainText("打开直接唤起浏览器");
+
+    await onlyType(page, "json");
+    await expect(bar(page)).toContainText("变换后直接粘贴");
+    await expect(bar(page)).not.toContainText("打开直接唤起浏览器");
   });
 
   test("JWT 动作带着「base64 不是加密」的提示", async ({ page }) => {
