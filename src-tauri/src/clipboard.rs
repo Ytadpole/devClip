@@ -346,8 +346,9 @@ fn spawn_macos(app: tauri::AppHandle, self_write: Arc<SelfWrite>) {
 /// - Windows 有 macOS `changeCount` 的严格等价物
 ///   `GetClipboardSequenceNumber`（windows.rs），且读它不需要打开
 ///   剪贴板，轮询成本接近零
-/// - 消息钩子那条路要 RegisterClassW + message-only 窗口 + 消息循环
-///   + 窗口过程，两百多行 unsafe，而团队没有 Windows 真机，只有 CI
+/// - 消息钩子那条路要 RegisterClassW + message-only 窗口 +
+///   消息循环 + 窗口过程，两百多行 unsafe，而团队没有 Windows
+///   真机，只有 CI
 ///   的编译检查兜底 —— 盲写这么多无法运行的代码风险不成比例。
 ///   轮询则把 macOS 这套**已被真机验证过**的循环原样搬过来，
 ///   去抖、SelfWrite、MAX_BYTES、敏感打标的行为三平台完全一致
