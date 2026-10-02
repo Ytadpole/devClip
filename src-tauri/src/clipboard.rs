@@ -24,13 +24,13 @@ const POLL: Duration = Duration::from_millis(500);
 
 /// 单条入库的字节上限。往剪贴板里丢几十 MB 日志很常见，
 /// 全量入库会让 SQLite 迅速膨胀，而且这种内容在面板里也没法看
-const MAX_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_BYTES: usize = 1024 * 1024;
 
 /// 敏感内容的存活时间（docs/03：now + 60s）。
 /// 到期由后台任务删除并清空剪贴板；再次复制会顺延。
 /// 是否启用由设置项 sensitiveAutoExpire 控制，
 /// 间隔本身不是设置项 —— 密钥在历史里多躺一分钟都算久
-const SENSITIVE_TTL_MS: i64 = 60_000;
+pub(crate) const SENSITIVE_TTL_MS: i64 = 60_000;
 
 /// 锁中毒在别处（lib.rs 的数据库连接）按「报告但别崩」处理，这里同理。
 /// 剪贴板状态只是缓存，坏掉重读一次就恢复了，不值得为此杀掉监听线程

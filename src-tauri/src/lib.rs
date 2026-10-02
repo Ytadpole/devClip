@@ -236,6 +236,40 @@ fn item_count(state: State<Db>) -> Result<i64, String> {
     repo::count(&c).map_err(|e| err("统计失败", e))
 }
 
+/// 编辑原条目（docs/04 通用操作 Edit）。
+///
+/// 类型识别与敏感扫描都在这里对**新内容**重跑，前端只管把文本送来：
+/// 前端自己复刻 detect/sensitive 会得到第二套判据，两边迟早对不上。
+/// 编辑出来的密钥同样要走「入库打标 + 60 秒过期」，和复制进来的一视同仁；
+/// 反过来把密钥改没了就回到普通条目，TTL 一并清掉。
+///
+/// 图片条目拒编辑：content 只是占位文本，真正的东西在文件里，
+/// 改文本等于让缩略图和内容对不上
+#[tauri::command]
+fn update_item(
+    state: State<Db>,
+    rt: State<'_, RuntimeSettings>,
+    id: i64,
+    content: String,
+) -> Result<ClipboardItem, String> {
+    if content.trim().is_empty() {
+        return Err("内容不能为空".into());
+    }
+    if content.len() > clipboard::MAX_BYTES {
+        return Err("内容超过 1 MB 上限".into());
+    }
+    let sensitive = crate::sensitive::scan(&content).is_some();
+    let expires_at = if sensitive && rt.get().sensitive_auto_expire {
+        Some(repo::now_ms() + clipboard::SENSITIVE_TTL_MS)
+    } else {
+        None
+    };
+    let c = lock(&state)?;
+    repo::update_content(&c, id, &content, sensitive, expires_at)
+        .map_err(|e| err("保存修改失败", e))?
+        .ok_or_else(|| "该条已被删除".to_string())
+}
+
 /// 收起面板。Esc 的第三级 —— 菜单没开、搜索框也是空的时候
 ///
 /// 走自定义命令而不是前端的 getCurrentWindow().hide()：
@@ -1010,6 +1044,7 @@ pub fn run() {
             remove_items,
             clear_all,
             add_item,
+            update_item,
             item_count,
             hide_window,
             copy_to_clipboard,

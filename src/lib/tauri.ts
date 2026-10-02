@@ -27,6 +27,10 @@ export const tauriApi: ClipboardApi = {
     return invoke("get_item", { id });
   },
 
+  async updateItem(id: number, content: string): Promise<ClipboardItem> {
+    return invoke("update_item", { id, content });
+  },
+
   async toggleFavorite(id: number): Promise<boolean> {
     return invoke("toggle_favorite", { id });
   },

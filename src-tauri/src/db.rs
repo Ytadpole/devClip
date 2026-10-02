@@ -11,11 +11,15 @@ use std::fmt;
 use std::path::Path;
 
 /// 库层错误。IO 与 SQL 分开，因为给用户看的提示不一样：
-/// IO 失败多半是权限或磁盘满，SQL 失败多半是查询写错了
+/// IO 失败多半是权限或磁盘满，SQL 失败多半是查询写错了。
+/// Conflict 是「操作本身不被允许」而不是坏掉了 —— 提示要指导
+/// 下一步（比如「历史里已有相同内容」），套进「数据库错误」
+/// 的措辞里用户只会以为应用坏了
 #[derive(Debug)]
 pub enum DbError {
     Io(String),
     Sql(rusqlite::Error),
+    Conflict(String),
 }
 
 impl fmt::Display for DbError {
@@ -23,6 +27,7 @@ impl fmt::Display for DbError {
         match self {
             DbError::Io(m) => write!(f, "{m}"),
             DbError::Sql(e) => write!(f, "数据库错误: {e}"),
+            DbError::Conflict(m) => write!(f, "{m}"),
         }
     }
 }

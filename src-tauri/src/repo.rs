@@ -287,6 +287,62 @@ pub fn toggle_favorite(conn: &Connection, id: i64) -> Result<bool, DbError> {
     Ok(f != 0)
 }
 
+/// 编辑原条目（docs/04 通用操作 Edit）：换内容、重跑类型识别、
+/// 重算去重哈希与预览。FTS 索引由 UPDATE 触发器自动重建
+/// （db.rs 的 `clipboard_item_au`），保存后立刻能搜到新内容。
+///
+/// `sensitive` / `expires_at` 由调用方对**新内容**重扫后传入 ——
+/// 与 upsert 同一个分工：仓库层不认规则，只认结论。不改敏感标记
+/// 直接放行的话，一段改出来的密钥会以「普通文本」的身份留在
+/// 永久历史里。
+///
+/// 返回 `None` 表示该 id 已不存在（被删了）。改成与另一条相同的
+/// 内容报 `Conflict`：历史里留两条一模一样的没有意义，用户真正
+/// 要做的多半是删掉手里这条 —— UNIQUE 约束报出来的是裸 SQL 错，
+/// 照着修比照着做快得多
+pub fn update_content(
+    conn: &Connection,
+    id: i64,
+    content: &str,
+    sensitive: bool,
+    expires_at: Option<i64>,
+) -> Result<Option<ClipboardItem>, DbError> {
+    let h = hash(content);
+    let other: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM clipboard_item WHERE content_hash = ?1",
+            params![h],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(other) = other.filter(|&o| o != id) {
+        return Err(DbError::Conflict(format!(
+            "历史里已有相同内容（第 {other} 条），不能改成重复的"
+        )));
+    }
+
+    let n = conn.execute(
+        "UPDATE clipboard_item
+         SET content = ?2, content_hash = ?3, content_type = ?4,
+             preview = ?5, byte_size = ?6, sensitive = ?7, expires_at = ?8
+         WHERE id = ?1",
+        params![
+            id,
+            content,
+            h,
+            detect::detect(content).as_str(),
+            preview(content, 200),
+            content.len() as i64,
+            sensitive,
+            expires_at
+        ],
+    )?;
+    if n == 0 {
+        return Ok(None);
+    }
+    get(conn, id)
+}
+
 pub fn remove(conn: &Connection, ids: &[i64]) -> Result<(), DbError> {
     for id in ids {
         conn.execute("DELETE FROM clipboard_item WHERE id = ?1", params![id])?;
@@ -577,6 +633,89 @@ mod tests {
         clear(&c).unwrap();
         assert_eq!(count(&c).unwrap(), 0);
         assert!(get(&c, b).unwrap().is_none(), "clear 后不应有残留");
+    }
+
+    #[test]
+    fn update_changes_content_and_type() {
+        let c = open_in_memory().unwrap();
+        let (id, _) = add(&c, "hello");
+        let it = update_content(&c, id, r#"{"a":1}"#, false, None)
+            .unwrap()
+            .expect("存在的 id 应返回更新后的条目");
+        assert_eq!(it.content, r#"{"a":1}"#);
+        assert_eq!(it.content_type, "json", "类型要按新内容重跑识别");
+        assert_eq!(it.byte_size, 7);
+    }
+
+    /// FTS 由 UPDATE 触发器同步（db.rs 有单独的触发器测试），
+    /// 这里守的是「编辑后的内容要能搜到、旧的搜不到」这条用户可见行为
+    #[test]
+    fn updated_content_is_searchable_old_is_not() {
+        let c = open_in_memory().unwrap();
+        let (id, _) = add(&c, "hello world");
+        update_content(&c, id, "goodbye world", false, None).unwrap();
+
+        let q = |t: &str| Query {
+            text: Some(t.into()),
+            ..Default::default()
+        };
+        let got = list(&c, &q("goodbye")).unwrap();
+        assert_eq!(got.len(), 1, "新内容应能搜到");
+        assert_eq!(got[0].id, id);
+        assert!(
+            list(&c, &q("hello")).unwrap().is_empty(),
+            "旧内容不应再命中"
+        );
+    }
+
+    #[test]
+    fn update_keeps_count_and_times() {
+        let c = open_in_memory().unwrap();
+        let (id, _) = add(&c, "hello");
+        let before = get(&c, id).unwrap().unwrap();
+        update_content(&c, id, "changed", false, None).unwrap();
+        let after = get(&c, id).unwrap().unwrap();
+        assert_eq!(after.copy_count, before.copy_count, "编辑不是复制");
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.last_copied_at, before.last_copied_at);
+    }
+
+    #[test]
+    fn update_rejects_duplicate_of_another_row() {
+        let c = open_in_memory().unwrap();
+        let (a, _) = add(&c, "aaa");
+        let (b, _) = add(&c, "bbb");
+        let e = update_content(&c, a, "bbb", false, None).unwrap_err();
+        assert!(e.to_string().contains("已有相同内容"), "实际：{e}");
+        // 改成自己的内容不算冲突（空操作但要成功）
+        assert!(update_content(&c, b, "bbb", false, None).unwrap().is_some());
+    }
+
+    #[test]
+    fn update_missing_id_returns_none() {
+        let c = open_in_memory().unwrap();
+        assert!(update_content(&c, 404, "x", false, None).unwrap().is_none());
+    }
+
+    /// 敏感标记跟着**新内容**走：改出来一段密钥要被打标并带上 TTL，
+    /// 反过来改掉密钥后要回到永久历史 —— 两个方向都由调用方传入，
+    /// 仓库层只负责落库
+    #[test]
+    fn update_persists_sensitive_and_expiry() {
+        let c = open_in_memory().unwrap();
+        let (id, _) = add(&c, "plain");
+        let ttl = now_ms() + 60_000;
+        let it = update_content(&c, id, "sk_live_abcdefghijklmnopqr", true, Some(ttl))
+            .unwrap()
+            .unwrap();
+        assert!(it.sensitive);
+        assert_eq!(it.expires_at, Some(ttl));
+
+        let it = update_content(&c, id, "plain again", false, None)
+            .unwrap()
+            .unwrap();
+        assert!(!it.sensitive);
+        assert_eq!(it.expires_at, None, "改回普通内容要清掉 TTL");
     }
 
     #[test]

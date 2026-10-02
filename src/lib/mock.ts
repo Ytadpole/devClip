@@ -349,6 +349,21 @@ export const mockApi: ClipboardApi = {
     return delay(db.find((i) => i.id === id) ?? null);
   },
 
+  async updateItem(id, content) {
+    const it = db.find((i) => i.id === id);
+    if (!it) throw new Error("该条已被删除");
+    if (db.some((x) => x.id !== id && x.content === content)) {
+      // 与 Rust 侧 repo::update_content 同一句措辞
+      throw new Error("历史里已有相同内容，不能改成重复的");
+    }
+    it.content = content;
+    it.preview = content.replace(/\s+/g, " ").slice(0, 160);
+    it.byteSize = new TextEncoder().encode(content).length;
+    // contentType 与 sensitive 保持不变：类型识别与敏感扫描都归后端
+    // （AGENTS.md 的两咽喉点），mock 复刻它们只会做出第二套判据
+    return delay({ ...it });
+  },
+
   async toggleFavorite(id) {
     const it = db.find((i) => i.id === id);
     if (!it) return false;

@@ -93,6 +93,15 @@ export interface ClipboardApi {
   list(q: Query): Promise<ClipboardItem[]>;
 
   get(id: number): Promise<ClipboardItem | null>;
+  /**
+   * 编辑原条目（docs/04 通用操作 Edit）。返回更新后的完整条目 ——
+   * 类型识别与敏感扫描在后端对新内容重跑，前端自己猜会得到
+   * 第二套判据（见 AGENTS.md 的两咽喉点）。
+   *
+   * 改成与另一条重复的内容、或该条已被删除时 reject，
+   * reject 的内容是能直接展示的中文
+   */
+  updateItem(id: number, content: string): Promise<ClipboardItem>;
   toggleFavorite(id: number): Promise<boolean>;
   remove(ids: number[]): Promise<void>;
   clearAll(): Promise<void>;
