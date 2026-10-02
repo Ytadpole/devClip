@@ -94,7 +94,7 @@ interface State {
   copy: (id: number) => Promise<void>;
   paste: (id: number) => Promise<void>;
   remove: (id: number) => Promise<void>;
-  runAction: (item: ClipboardItem, actionId: string) => Promise<void>;
+  runAction: (item: ClipboardItem, action: ToolboxAction) => Promise<void>;
   say: (text: string, kind?: Status["kind"]) => void;
 
   openMenu: (item: ClipboardItem, x: number, y: number) => void;
@@ -373,11 +373,27 @@ export const useStore = create<State>((set, get) => ({
    *
    * 动作成功后**不刷新列表** —— 结果写的是系统剪贴板，
    * Rust 侧用 SelfWrite 挡掉了自己这一次写入，历史里不会多出新条目
+   *
+   * `kind: "open"` 走另一条路：它要唤起系统默认程序，不产生剪贴板
+   * 内容，也就跟「写回剪贴板 → 粘贴」那一套毫无关系。**按 kind 分流
+   * 而不是按 id 前缀猜** —— 「url.open 不在注册表里」是后端的结构
+   * 事实，前端不该知道
    */
-  async runAction(item, actionId) {
+  async runAction(item, action: ToolboxAction) {
+    if (action.kind === "open") {
+      // 契约是 Promise<void>：没有摘要可回，失败一律走 reject
+      // （Rust 侧 reject 的内容就是能直接展示的中文）
+      try {
+        await api.openExternal(item.content);
+        get().say("已交给系统默认程序打开");
+      } catch (e) {
+        get().say(errorText(e) || "打开失败", "err");
+      }
+      return;
+    }
     let r: ActionResult;
     try {
-      r = await api.runToolboxAction(item.id, actionId);
+      r = await api.runToolboxAction(item.id, action.id);
     } catch (e) {
       get().say(errorText(e) || "动作执行失败", "err");
       return;

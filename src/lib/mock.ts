@@ -241,6 +241,12 @@ const ACTIONS: Record<ContentType, ToolboxAction[]> = {
   url: [
     { id: "url.strip_query", label: "去掉 query" },
     { id: "url.domain", label: "提取域名" },
+    {
+      id: "url.open",
+      label: "在浏览器打开",
+      hint: "交给系统默认的浏览器，不经过剪贴板",
+      kind: "open",
+    },
   ],
   uuid: [
     { id: "uuid.upper", label: "转大写" },
@@ -427,6 +433,13 @@ export const mockApi: ClipboardApi = {
     // 存下来让设置页回显即可
     settings = { ...settings, hotkey: accel };
     return delay(accel);
+  },
+
+  async openExternal() {
+    // 浏览器里没有「系统默认程序」可唤起。真应用里这一步会让面板收起、
+    // 浏览器弹出来，mock 做不到也不该做；契约是 Promise<void>，
+    // 失败走 reject，所以这里什么都不用返回
+    return delay<void>(undefined);
   },
 
   async monitorStatus() {

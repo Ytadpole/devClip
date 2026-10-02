@@ -289,13 +289,18 @@ export function Palette() {
                   // 而 JWT「base64 不是加密」这类必须看到的话，
                   // 悬停是唯一不破坏布局的位置
                   title={a.hint}
-                  onClick={() => void s.runAction(selected, a.id)}
+                  onClick={() => void s.runAction(selected, a)}
                   className="rounded-md border border-line bg-field px-2 py-0.5 text-[11px] text-fg transition-colors hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-sky-200 light:hover:text-sky-700"
                 >
                   {a.label}
                 </button>
               ))}
-              <span className="ml-auto text-[11px] text-faint">变换后直接粘贴</span>
+              <span className="ml-auto text-[11px] text-faint">
+                {/* open 类动作不经过剪贴板，提示语不能一概而论 */}
+                {s.actions.some((a) => a.kind === "open")
+                  ? "变换后粘贴 · 打开直接唤起浏览器"
+                  : "变换后直接粘贴"}
+              </span>
             </div>
           )}
 

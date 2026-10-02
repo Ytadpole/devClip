@@ -71,6 +71,10 @@ export const tauriApi: ClipboardApi = {
     return invoke<string | null>("monitor_status");
   },
 
+  async openExternal(url: string) {
+    return invoke("open_external", { url });
+  },
+
   subscribe(onChanged: () => void, onNotice?: (text: string) => void): () => void {
     // listen 是异步的，而取消订阅必须能同步调用 —— 调用方拿到的
     // 就是一个普通函数。所以先把 unlisten 挂起来，等它 resolve 之后

@@ -62,6 +62,13 @@ export interface ToolboxAction {
    * 写在文档里则没人会看到
    */
   hint?: string;
+  /**
+   * `transform`（缺省）走 `runToolboxAction`；`open` 走 `openExternal`。
+   *
+   * 分开是因为后者要唤起系统程序，得由后端声明该按钮是什么 ——
+   * 前端不按类型猜（AGENTS.md 的两咽喉点）
+   */
+  kind?: "transform" | "open";
 }
 
 /**
@@ -108,6 +115,12 @@ export interface ClipboardApi {
    * 结果在哪都比在界面上更好用
    */
   runToolboxAction(id: number, actionId: string): Promise<ActionResult>;
+
+  /**
+   * 用系统默认程序打开一条 URL。**只放行 http/https**（后端把关，
+   * 这里不做判断）—— 传进来的是用户复制来的任意文本
+   */
+  openExternal(url: string): Promise<void>;
 
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;

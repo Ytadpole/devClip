@@ -37,7 +37,23 @@ pub struct ToolboxAction {
     /// 「base64 不是加密」，不能只给一个 "Decode Header"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// `transform`（默认）走 `run_toolbox_action`；`open` 走
+    /// `open_external`
+    ///
+    /// 分开是因为两者要的东西根本不同：变换是纯函数、结果进剪贴板，
+    /// 而「在浏览器打开」要唤起系统默认程序 —— 它进不了注册表
+    /// （见 `Entry` 上面对 `run` 的要求），所以由后端声明、前端路由
+    #[serde(default, skip_serializing_if = "is_default_kind")]
+    pub kind: &'static str,
 }
+
+fn is_default_kind(k: &str) -> bool {
+    k == "transform"
+}
+
+/// `url.open` 的 id。前端按它路由，而 `find()` 取不到它 ——
+/// 需要 `AppHandle` 的动作不在 ENTRIES 里
+pub const OPEN_IN_BROWSER_ID: &str = "url.open";
 
 /// 注册表里的一项。
 ///
@@ -195,15 +211,27 @@ pub static ENTRIES: &[Entry] = &[
 
 /// 该类型可用的动作
 pub fn for_type(t: ContentType) -> Vec<ToolboxAction> {
-    ENTRIES
+    let mut out: Vec<ToolboxAction> = ENTRIES
         .iter()
         .filter(|e| e.applies_to.contains(&t))
         .map(|e| ToolboxAction {
             id: e.id.to_string(),
             label: e.label.to_string(),
             hint: e.hint.map(str::to_string),
+            kind: "transform",
         })
-        .collect()
+        .collect();
+    // 需要 AppHandle 的动作在最后补进去，顺序刻意放在变换之后 ——
+    // 它不产生剪贴板内容，和前面几条不是一回事
+    if t == ContentType::Url {
+        out.push(ToolboxAction {
+            id: OPEN_IN_BROWSER_ID.to_string(),
+            label: "在浏览器打开".to_string(),
+            hint: Some("交给系统默认的浏览器，不经过剪贴板".to_string()),
+            kind: "open",
+        });
+    }
+    out
 }
 
 /// 按 id 取动作。取不到就是前端传了不该传的 id
@@ -312,6 +340,10 @@ mod tests {
     /// 「能列出来」与「能跑」必须是同一个判断。这条把两者绑在一起：
     /// for_type() 用的是 applies_to，运行时的适用性检查也用 applies_to，
     /// 一旦有人只改其中一边，UI 上就会给出点一下就报错的按钮
+    ///
+    /// 唯一的例外是 `kind: "open"`：它进不了注册表（要 `AppHandle`），
+    /// 走的是 `open_external`。所以按 kind 分流，**例外被收窄到那一个
+    /// 动作** —— 以后任何新的 open 类动作都得显式加进来，否则这条拦下
     #[test]
     fn listed_actions_are_exactly_the_runnable_ones() {
         for t in [
@@ -327,7 +359,16 @@ mod tests {
             ContentType::Markdown,
         ] {
             for a in for_type(t) {
-                let e = find(&a.id).expect("列出来的动作必须能按 id 找到");
+                if a.kind == "open" {
+                    assert_eq!(
+                        (a.id.as_str(), t),
+                        (OPEN_IN_BROWSER_ID, ContentType::Url),
+                        "{} 是没登记过的 open 类动作",
+                        a.id
+                    );
+                    continue;
+                }
+                let e = find(&a.id).expect("列出来的变换动作必须能按 id 找到");
                 assert!(
                     e.applies_to.contains(&t),
                     "{} 对 {} 列出来了，但运行时会拒绝",
@@ -335,6 +376,30 @@ mod tests {
                     t.as_str()
                 );
             }
+        }
+    }
+
+    /// open 类动作排在最后，且只有 url 有。它不产生剪贴板内容，
+    /// 混在变换动作里会让工具条读起来像同一类操作
+    #[test]
+    fn open_action_is_last_and_url_only() {
+        let url = for_type(ContentType::Url);
+        assert_eq!(url.last().unwrap().kind, "open");
+        assert_eq!(url.last().unwrap().id, OPEN_IN_BROWSER_ID);
+        for t in [
+            ContentType::Json,
+            ContentType::Text,
+            ContentType::Code,
+            ContentType::Sql,
+            ContentType::Jwt,
+            ContentType::Base64,
+            ContentType::Uuid,
+        ] {
+            assert!(
+                for_type(t).iter().all(|a| a.kind == "transform"),
+                "{} 不该有 open 类动作",
+                t.as_str()
+            );
         }
     }
 

@@ -363,6 +363,32 @@ fn available_actions(content_type: String) -> Vec<ToolboxAction> {
     toolbox::for_type(t)
 }
 
+/// 用系统默认程序打开一条 URL
+///
+/// **只放行 http / https。** `url` 这个内容类型的判据里 scheme 包含
+/// `file`、`ftp`、`ws`、`git@…` 等好几种（docs/04），而这里拿到的是
+/// **用户复制来的任意文本** —— 直接交给 opener 就等于「点一下可能
+/// 唤起任意已注册的程序」。`file://` 能读本地文件，`smb://` 能碰
+/// 网络共享。只认 web 协议是这里唯一能守住的那条线。
+#[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let u = check_openable(&url)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(u.as_str(), None::<String>)
+        .map_err(|e| format!("打开失败：{e}"))
+}
+
+/// 能不能交给 opener。**纯函数，所以能测** —— 而这一条恰好是安全
+/// 边界，不该只能靠手点验证
+fn check_openable(url: &str) -> Result<url::Url, String> {
+    let u = url::Url::parse(url.trim()).map_err(|e| format!("不是合法 URL：{e}"))?;
+    if !matches!(u.scheme(), "http" | "https") {
+        return Err(format!("只打开 http/https 链接，这个是 {}", u.scheme()));
+    }
+    Ok(u)
+}
+
 /// 跑一个工具箱动作，然后**直接粘到弹出面板前的前台窗口**。
 /// 返回的是**一句摘要**，不是结果本身
 ///
@@ -989,6 +1015,7 @@ pub fn run() {
             copy_to_clipboard,
             paste,
             available_actions,
+            open_external,
             run_toolbox_action,
             get_settings,
             set_settings,
@@ -998,4 +1025,40 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 这一组守的是安全边界：`url` 内容类型的判据里 scheme 有好几种
+    /// （docs/04），而传进来的是**用户复制来的任意文本**
+    #[test]
+    fn open_allows_only_web_schemes() {
+        for ok in ["https://example.com/a?b=1", "http://127.0.0.1:8080/x"] {
+            assert!(check_openable(ok).is_ok(), "{ok} 应当放行");
+        }
+        for no in [
+            "file:///etc/passwd",
+            "ftp://example.com/x",
+            "smb://host/share",
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+        ] {
+            let err = check_openable(no).unwrap_err();
+            assert!(err.contains("http/https"), "{no} 应被拒，实际：{err}");
+        }
+    }
+
+    /// 复制来的 URL 前后常有空白与换行（终端里尤其常见）
+    #[test]
+    fn open_trims_surrounding_space() {
+        assert!(check_openable("  https://example.com\n").is_ok());
+    }
+
+    #[test]
+    fn open_reports_garbage_as_not_a_url() {
+        let err = check_openable("不是 URL").unwrap_err();
+        assert!(err.contains("不是合法 URL"), "实际：{err}");
+    }
 }
