@@ -653,6 +653,37 @@ test("跑一轮主要交互后控制台干净", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test.describe("设置页 · 真窗口尺寸", () => {
+  // 应用窗口是固定 680×420（tauri.conf.json，resizable: false），
+  // 而 e2e 默认视口 1280×900 —— 设置页内容 557px 高，在真窗口里
+  // 曾经被 overflow-hidden 整个裁掉、保存按钮点不到，默认视口
+  // 从来看不见。这组用例钉住真窗口尺寸下的行为
+  test.use({ viewport: { width: 680, height: 420 } });
+
+  test("标题与保存按钮始终可见，字段区可滚动", async ({ page }) => {
+    await page.getByRole("button", { name: "设置" }).click();
+    await expect(page.locator("[data-settings]")).toBeVisible();
+
+    // 钉住的两行必须落在 420px 视口内
+    const save = page.getByRole("button", { name: "保存设置" });
+    await expect(save).toBeVisible();
+    const saveBox = await save.boundingBox();
+    expect(saveBox!.y + saveBox!.height, "保存按钮底部应低于 420").toBeLessThanOrEqual(420.5);
+
+    // 字段区真的能滚：滚到底后最后一个字段（敏感开关）进入可视区
+    const scroller = page.locator("[data-settings-scroll]");
+    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const checkbox = page.locator("[data-settings] input[type=checkbox]");
+    const cbBox = await checkbox.boundingBox();
+    expect(cbBox!.y, "滚到底后敏感开关应进入视口").toBeGreaterThanOrEqual(0);
+    expect(cbBox!.y).toBeLessThan(420.5);
+
+    // 滚动状态下保存照常，回音显示在钉底的行里
+    await save.click();
+    await expect(statusBar(page)).toHaveText(/已保存/);
+  });
+});
+
 test.describe("监听不可用", () => {
   // beforeEach 已经 goto("/")，这里要换 URL 造降级场景 ——
   // mock 的 monitorStatus 认 ?monitor=off

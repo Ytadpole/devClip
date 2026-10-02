@@ -52,10 +52,14 @@ export function SettingsPanel() {
     <div
       data-settings=""
       data-panel-root
-      className="overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+      // 三段式：标题钉顶、保存行钉底、字段区滚动。窗口是固定 680×420，
+      // 字段加起来超过窗口高度（实测 557px > 420px）—— 早先整页
+      // overflow-hidden，底部连保存按钮一起被裁掉且滚不动。
+      // e2e 视口是 1280×900 从来看不见这件事，专门有条小窗口用例守着
+      className="flex h-full flex-col overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
     >
-      <div className="flex items-center border-b border-line px-4">
-        <span className="h-14 flex-1 self-center text-[15px] text-fg-strong">设置</span>
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
+        <span className="text-[15px] text-fg-strong">设置</span>
         <button
           type="button"
           onClick={closeSettings}
@@ -65,7 +69,10 @@ export function SettingsPanel() {
         </button>
       </div>
 
-      <div className="space-y-4 px-4 py-4 text-[13px]">
+      <div
+        data-settings-scroll=""
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 text-[13px]"
+      >
         <div>
           <span className="mb-1 block text-label">主题</span>
           <ThemePicker theme={theme} onPick={(t) => void setTheme(t)} />
@@ -154,7 +161,7 @@ export function SettingsPanel() {
         </label>
       </div>
 
-      <div className="flex items-center border-t border-line px-4 py-2 text-[11px]">
+      <div className="flex shrink-0 items-center border-t border-line px-4 py-2 text-[11px]">
         <button
           type="button"
           onClick={() =>
