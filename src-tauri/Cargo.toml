@@ -1,6 +1,6 @@
 [package]
 name = "devclip"
-version = "0.1.1"
+version = "0.1.2"
 description = "A clipboard history and developer toolbox"
 authors = ["DevClip contributors"]
 edition = "2021"
