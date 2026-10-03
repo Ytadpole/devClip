@@ -42,7 +42,7 @@ export function ItemEditor() {
   };
 
   return (
-    <div data-editor="" className="flex h-full flex-col">
+    <div data-editor="" className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-panel/95 backdrop-blur-xl">
       <div className="flex items-center gap-2 border-b border-line px-4 py-2.5 text-[12px] text-muted">
         <TypeBadge type={editing.contentType} />
         <span>编辑条目</span>

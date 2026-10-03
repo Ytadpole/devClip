@@ -56,7 +56,7 @@ export function SettingsPanel() {
       // 字段加起来超过窗口高度（实测 557px > 420px）—— 早先整页
       // overflow-hidden，底部连保存按钮一起被裁掉且滚不动。
       // e2e 视口是 1280×900 从来看不见这件事，专门有条小窗口用例守着
-      className="flex h-full flex-col overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+      className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
     >
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
         <span className="text-[15px] text-fg-strong">设置</span>

@@ -181,7 +181,7 @@ export function Palette() {
             if (i >= 0) useStore.getState().select(i);
           }}
           data-panel-root
-          className="flex h-full flex-col overflow-hidden rounded-xl bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
+          className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl light:shadow-black/10"
         >
           {/* 搜索行兼做拖拽区：按住空白处可移动面板，输入框点击不受影响 */}
           <div data-tauri-drag-region className="flex items-center gap-3 border-b border-line px-4">
