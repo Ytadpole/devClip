@@ -255,6 +255,22 @@ fn osascript(script: &str) -> Result<std::process::Output, String> {
     }
 }
 
+/// 从 osascript 的报错里抠出 AppleScript 错误码。
+///
+/// osascript 失败时**退出码恒为 1**，真正的错误码只出现在 stderr
+/// 末尾的 `… (-1719)` 里。早先拿 `status.code()` 比 1719 永远比不中，
+/// 全靠 stderr 里的英文字样兜底 —— 而那段文案跟着系统语言走，
+/// 中文系统上连兜底也失灵，TCC 授权问题被降级成一句没人懂的
+/// 「模拟按键失败」。
+#[cfg(target_os = "macos")]
+fn osascript_error_code(stderr: &str) -> Option<i32> {
+    let line = stderr.trim_end();
+    let open = line.rfind('(')?;
+    let inner = &line[open + 1..line.len() - 1];
+    let n = inner.strip_prefix('-')?.parse::<u32>().ok()?;
+    Some(-(n as i32))
+}
+
 #[cfg(target_os = "macos")]
 pub fn send_paste_keystroke() -> Result<(), String> {
     let out =
@@ -263,9 +279,23 @@ pub fn send_paste_keystroke() -> Result<(), String> {
         return Ok(());
     }
     let err = String::from_utf8_lossy(&out.stderr);
-    if out.status.code() == Some(1719) || err.contains("assistive access") {
+    let code = osascript_error_code(&err);
+    // -1719/-25211：辅助功能未授权，keystroke 根本发不出去
+    if code == Some(-1719)
+        || code == Some(-25211)
+        || err.contains("assistive access")
+        || err.contains("assistive events")
+    {
         return Err(
             "缺少「辅助功能」授权：请到 系统设置 → 隐私与安全性 → 辅助功能，勾选 DevClip".into(),
+        );
+    }
+    // -1743：Apple Events 被拒。osascript 要向 System Events 发指令，
+    // 那是另一条独立的 TCC 授权（「自动化」），和辅助功能互不覆盖
+    if code == Some(-1743) || err.contains("Not authorized to send Apple events") {
+        return Err(
+            "缺少「自动化」授权：请到 系统设置 → 隐私与安全性 → 自动化 → DevClip，勾选 System Events（辅助功能也要勾选 DevClip）"
+                .into(),
         );
     }
     Err(format!("模拟按键失败：{}", err.trim()))
