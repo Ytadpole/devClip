@@ -157,10 +157,21 @@ export interface ClipboardApi {
    * 返回取消订阅的函数。
    *
    * `onNotice` 收后端的降级提示（如模拟粘贴失败、请手动粘贴）。
-   * 没有它用户只看到「点了没反应」
+   * 没有它用户只看到「点了没反应」。`action` 非 undefined 时说明
+   * 失败原因是 TCC 授权缺失，前端应渲染「去授权」按钮调
+   * openPermissionSettings —— 见 backend.ts 同名导出
    *
    * mock 端没有真实剪贴板，回调永不触发 —— 界面照常工作，
    * 不会因为缺事件而空转
    */
-  subscribe(onChanged: () => void, onNotice?: (text: string) => void): () => void;
+  subscribe(
+    onChanged: () => void,
+    onNotice?: (text: string, action?: PermissionPane) => void,
+  ): () => void;
 }
+
+/**
+ * macOS 隐私授权面板名。模拟粘贴被 TCC 拒掉时，后端在降级提示里
+ * 带上该去哪个面板，前端据此渲染「去授权」按钮
+ */
+export type PermissionPane = "accessibility" | "automation";

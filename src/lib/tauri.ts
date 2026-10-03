@@ -13,6 +13,7 @@ import type {
   ClipboardApi,
   ClipboardItem,
   ContentType,
+  PermissionPane,
   Query,
   Settings,
   ToolboxAction,
@@ -79,7 +80,10 @@ export const tauriApi: ClipboardApi = {
     return invoke("open_external", { url });
   },
 
-  subscribe(onChanged: () => void, onNotice?: (text: string) => void): () => void {
+  subscribe(
+    onChanged: () => void,
+    onNotice?: (text: string, action?: PermissionPane) => void,
+  ): () => void {
     // listen 是异步的，而取消订阅必须能同步调用 —— 调用方拿到的
     // 就是一个普通函数。所以先把 unlisten 挂起来，等它 resolve 之后
     // 再决定是真取消还是立刻补取消（订阅过程中就被取消的情况）
@@ -100,8 +104,14 @@ export const tauriApi: ClipboardApi = {
     // 但用户不知道「为什么没粘上」，所以这条必须能显示出来
     if (onNotice) {
       add(
-        listen<{ text: string }>("clipboard://notice", (e) =>
-          onNotice(e.payload.text),
+        listen<{ text: string; action?: string }>("clipboard://notice", (e) =>
+          onNotice(
+            e.payload.text,
+            // 后端只发这两个值，但事件通道是无类型的，收口在这里
+            e.payload.action === "accessibility" || e.payload.action === "automation"
+              ? e.payload.action
+              : undefined,
+          ),
         ),
       );
     }
@@ -119,6 +129,10 @@ export const tauriApi: ClipboardApi = {
 export const tauriWindow = {
   hide(): Promise<void> {
     return invoke("hide_window");
+  },
+  /** 打开 macOS 的授权面板。降级提示里的「去授权」按钮走这里 */
+  openPermissionSettings(pane: PermissionPane): Promise<void> {
+    return invoke("open_permission_settings", { pane });
   },
   /** 进入窗口拖动。data-tauri-drag-region 由注入脚本处理；搜索框
    * 这类「点 vs 拖」要自己判阈值的元素，在移动超限后调这里 */

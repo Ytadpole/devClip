@@ -301,6 +301,28 @@ pub fn send_paste_keystroke() -> Result<(), String> {
     Err(format!("模拟按键失败：{}", err.trim()))
 }
 
+/// 降级错误里能不能认出「这是授权问题」。
+///
+/// 返回值对应系统设置里的面板名，前端拿它渲染「去授权」按钮，
+/// 点了直接打开对应面板。认不出（真正的故障）就返回 None，
+/// 提示保持纯文案 —— 授权本身没法程序化代劳，TCC 存在的意义
+/// 就是防止程序自己给自己授权，能做的只有把路铺到点击为止
+#[cfg(target_os = "macos")]
+pub fn permission_pane(err: &str) -> Option<&'static str> {
+    if err.contains("辅助功能") {
+        Some("accessibility")
+    } else if err.contains("自动化") {
+        Some("automation")
+    } else {
+        None
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn permission_pane(_err: &str) -> Option<&'static str> {
+    None
+}
+
 #[cfg(not(target_os = "macos"))]
 pub fn send_paste_keystroke() -> Result<(), String> {
     #[cfg(all(unix, not(target_os = "macos")))]

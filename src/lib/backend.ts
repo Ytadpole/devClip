@@ -7,7 +7,7 @@
  */
 
 import { isTauri } from "@tauri-apps/api/core";
-import type { ClipboardApi } from "./api";
+import type { ClipboardApi, PermissionPane } from "./api";
 import { mockApi } from "./mock";
 import { tauriApi, tauriEvents, tauriWindow } from "./tauri";
 
@@ -55,3 +55,15 @@ export const startWindowDrag: () => void =
  */
 export const onOpenSettings: (cb: () => void) => () => void =
   backendName === "tauri" ? tauriEvents.onOpenSettings : () => () => {};
+
+/**
+ * 打开 macOS 的授权面板（辅助功能 / 自动化）。
+ *
+ * 模拟粘贴被 TCC 拒掉时，降级提示的 `action` 字段会指明面板，
+ * 前端渲染「去授权」按钮调这里。与 hideWindow 同理：不进
+ * ClipboardApi，分派留在这个文件；mock 没有系统设置可开，直接成功
+ */
+export const openPermissionSettings: (pane: PermissionPane) => Promise<void> =
+  backendName === "tauri"
+    ? (pane) => tauriWindow.openPermissionSettings(pane)
+    : () => Promise.resolve();

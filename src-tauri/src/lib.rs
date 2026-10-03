@@ -371,6 +371,9 @@ async fn paste_into_restore_target(
             // 窗口已经藏了、目标也激活了，不弹回来就没有任何提示，
             // 用户只会看到「点了没反应」
             show_palette(app);
+            // 认得出是授权问题时随提示带上面板名，前端据此渲染
+            // 「去授权」按钮 —— 把「照着文案找设置项」缩短成一次点击
+            let action = clipboard::permission_pane(&e);
             // emit 而不是直接改 store：命令层拿不到 store，
             // 而前端已经在监听这个事件（api.ts 的 subscribe 同一条通道）
             let _ = tauri::Emitter::emit(
@@ -382,10 +385,41 @@ async fn paste_into_restore_target(
                         clipboard::PASTE_KEY_HINT
                     ),
                     "reason": e,
+                    "action": action,
                 }),
             );
             Ok(false)
         }
+    }
+}
+
+/// 打开 macOS 的授权面板（系统设置 → 隐私与安全性）。
+///
+/// 模拟按键被 TCC 拒掉时，降级提示里会带一个「去授权」按钮调这里。
+/// `pane` 是 clipboard::permission_pane 给出的面板名
+#[tauri::command]
+fn open_permission_settings(pane: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let url = match pane.as_str() {
+            "accessibility" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+            "automation" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            }
+            _ => return Err(format!("未知的授权面板：{pane}")),
+        };
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("打开系统设置失败：{e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pane;
+        Err("此平台无需授权".into())
     }
 }
 
@@ -1062,6 +1096,7 @@ pub fn run() {
             paste,
             available_actions,
             open_external,
+            open_permission_settings,
             run_toolbox_action,
             get_settings,
             set_settings,

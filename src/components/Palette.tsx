@@ -6,7 +6,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TypeBadge } from "./TypeBadge";
 import { VirtualList } from "./VirtualList";
 import { backendLabel, useStore } from "../store";
-import { hideWindow, onOpenSettings, startWindowDrag } from "../lib/backend";
+import { hideWindow, onOpenSettings, openPermissionSettings, startWindowDrag } from "../lib/backend";
 import { resolve } from "../lib/theme";
 import type { ContentType } from "../lib/api";
 
@@ -343,6 +343,26 @@ export function Palette() {
                 }
               >
                 {s.status.text}
+                {/* TCC 授权缺失（仅 macOS）：把「照着文案找设置项」
+                    缩短成一次点击。按钮嵌在提示 span 里，颜色跟随，
+                    不另起一行挤掉快捷键提示 */}
+                {s.status.action && (
+                  <button
+                    type="button"
+                    data-permission-action=""
+                    onClick={() => {
+                      const pane = useStore.getState().status?.action;
+                      if (!pane) return;
+                      void openPermissionSettings(pane);
+                      useStore
+                        .getState()
+                        .say("已打开系统设置，请勾选 DevClip 的授权", "warn", pane);
+                    }}
+                    className="ml-2 rounded border border-amber-400/40 px-1.5 py-0.5 text-amber-400 transition-colors hover:bg-amber-400/10 light:text-amber-700"
+                  >
+                    去授权
+                  </button>
+                )}
               </span>
             ) : (
               <>

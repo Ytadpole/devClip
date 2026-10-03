@@ -9,7 +9,7 @@
 import { create } from "zustand";
 import { api, backendName } from "./lib/backend";
 import { apply, onSystemChange } from "./lib/theme";
-import type { ActionResult, ClipboardItem, ContentType, Settings, Theme, ToolboxAction } from "./lib/api";
+import type { ActionResult, ClipboardItem, ContentType, PermissionPane, Settings, Theme, ToolboxAction } from "./lib/api";
 
 /** 搜索防抖。docs/06 定的是 80ms：再小则每个击键都打一次后端，
  * 再大则能感觉到「搜索不跟手」。 */
@@ -29,6 +29,13 @@ interface Status {
    * 两者的紧急程度不同，用户不该把降级当故障
    */
   kind: "ok" | "warn" | "err";
+  /**
+   * 非 undefined 表示降级原因是 TCC 授权缺失（仅 macOS），
+   * 状态栏据此渲染「去授权」按钮，点了打开对应的系统设置面板。
+   * 随 status 一起 2.6 秒消失 —— 授权场景用户多半来不及点，
+   * 但提示文案里写了去哪开，按钮是省事的捷径不是唯一入口
+   */
+  action?: PermissionPane;
 }
 
 /** 右键菜单的挂载点。用视口坐标，菜单本体 fixed 定位。 */
@@ -104,7 +111,7 @@ interface State {
   closeEditor: () => void;
   saveEdit: (id: number, content: string) => Promise<boolean>;
   runAction: (item: ClipboardItem, action: ToolboxAction) => Promise<void>;
-  say: (text: string, kind?: Status["kind"]) => void;
+  say: (text: string, kind?: Status["kind"], action?: PermissionPane) => void;
 
   openMenu: (item: ClipboardItem, x: number, y: number) => void;
   closeMenu: () => void;
@@ -195,7 +202,7 @@ export const useStore = create<State>((set, get) => ({
       () => void useStore.getState().refresh(),
       // 降级提示直接显示在状态栏。降级不是错误 —— 内容确实复制
       // 成功了，只是没自动粘上，所以用 warn 语气而不是 err
-      (text) => useStore.getState().say(text, "warn"),
+      (text, action) => useStore.getState().say(text, "warn", action),
     );
     // 系统主题变了要重算。回调是幂等的，React 严格模式下多注册一个
     // 监听也只是重复 apply 一次，所以不费劲去重
@@ -440,9 +447,9 @@ export const useStore = create<State>((set, get) => ({
     get().say(r.ok ? r.value : r.error, r.ok ? "ok" : "err");
   },
 
-  say(text, kind = "ok") {
+  say(text, kind = "ok", action?) {
     clearTimeout(statusTimer);
-    set({ status: { text, kind } });
+    set({ status: { text, kind, action } });
     statusTimer = setTimeout(() => set({ status: null }), 2600);
   },
 
